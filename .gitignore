@@ -1,0 +1,50 @@
+# Binary
+locolm.exe
+locolm
+
+# Database
+*.db
+
+# Profiling
+*.prof
+*.dot
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+
+# Dependency directories
+vendor/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment files
+.env
+.env.local
+
+# Project memory
+memory.md
+
+# Local config
+locolm.json
+
+# Build artifacts
+*.o
+*.a
+*.so
+
+# Go workspace
+go.work
+go.work.sum
