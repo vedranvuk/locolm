@@ -11,10 +11,10 @@ import (
 )
 
 func main() {
-	// Load config from locolm.json + env overrides, set LOCOLM_* env vars
-	LoadConfig()
+	// Load config from locolm.json + GOOGLE_* env overrides
+	cfg := LoadConfig()
 
-	port := os.Getenv("LOCOLM_MCP_PORT")
+	port := cfg.MCPPort
 	if port == "" {
 		log.Fatal("[LOCOLM] mcp_port is required in locolm.json")
 	}
@@ -32,7 +32,7 @@ func main() {
 	}()
 
 	// Bootstrap: llama-server → browser
-	Bootstrap()
+	Bootstrap(cfg.LlamaServerCommand, cfg.BrowserCommand)
 
 	// Wait for shutdown signal
 	sig := make(chan os.Signal, 1)

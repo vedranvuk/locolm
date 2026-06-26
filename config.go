@@ -7,17 +7,23 @@ import (
 )
 
 type Config struct {
-	MCPPort            string `json:"mcp_port"`
-	LlamaServerCommand string `json:"llama_server_command"`
-	BrowserCommand     string `json:"browser_command"`
-	GoogleAPIKey       string `json:"google_api_key"`
-	GoogleCSEID        string `json:"google_cse_id"`
+	MCPPort              string `json:"mcp_port"`
+	LlamaServerCommand   string `json:"llama_server_command"`
+	BrowserCommand       string `json:"browser_command"`
+	GoogleAPIKey         string `json:"google_api_key"`
+	GoogleCSEID          string `json:"google_cse_id"`
+	WebFetchMaxBytes     int64  `json:"web_fetch_max_bytes"`
+	WebFetchMaxTextBytes int64  `json:"web_fetch_max_text_bytes"`
+	WebFetchTimeoutSec   int    `json:"web_fetch_timeout_seconds"`
 }
 
 // LoadConfig reads locolm.json, applies GOOGLE_* env overrides, and returns the resolved config.
-// It also sets LOCOLM_* env vars so the rest of the codebase can read them via os.Getenv.
 func LoadConfig() Config {
-	cfg := Config{}
+	cfg := Config{
+		WebFetchMaxBytes:     5 * 1024 * 1024,
+		WebFetchMaxTextBytes: 200 * 1024,
+		WebFetchTimeoutSec:   30,
+	}
 
 	// 1. Read locolm.json from working directory (go run .) or exe directory (binary)
 	wd, _ := os.Getwd()
@@ -41,16 +47,7 @@ func LoadConfig() Config {
 		cfg.GoogleCSEID = v
 	}
 
-	// 3. Always set LOCOLM_* env vars (even empty) so downstream code can read them
-	os.Setenv("LOCOLM_MCP_PORT", cfg.MCPPort)
-	os.Setenv("LOCOLM_BOOTSTRAP_LLAMA_SERVER_COMMAND", cfg.LlamaServerCommand)
-	os.Setenv("LOCOLM_BOOTSTRAP_BROWSER_COMMAND", cfg.BrowserCommand)
-	if cfg.GoogleAPIKey != "" {
-		os.Setenv("GOOGLE_API_KEY", cfg.GoogleAPIKey)
-	}
-	if cfg.GoogleCSEID != "" {
-		os.Setenv("GOOGLE_CSE_ID", cfg.GoogleCSEID)
-	}
+	SetWebFetchConfig(cfg.WebFetchMaxBytes, cfg.WebFetchMaxTextBytes, cfg.WebFetchTimeoutSec)
 
 	return cfg
 }

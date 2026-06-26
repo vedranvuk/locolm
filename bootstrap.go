@@ -14,8 +14,7 @@ const llamaURL = "http://127.0.0.1:11500"
 var llamaProcess *os.Process
 
 // Bootstrap starts llama-server, waits for it to be ready, then launches the browser.
-func Bootstrap() {
-	llamaCmd := os.Getenv("LOCOLM_BOOTSTRAP_LLAMA_SERVER_COMMAND")
+func Bootstrap(llamaCmd, browserCmd string) {
 	if llamaCmd == "" {
 		log.Fatalf("[BOOTSTRAP] llama_server_command is required in locolm.json")
 	}
@@ -36,7 +35,6 @@ func Bootstrap() {
 		log.Fatalf("[BOOTSTRAP] llama-server did not become ready in time")
 	}
 
-	browserCmd := os.Getenv("LOCOLM_BOOTSTRAP_BROWSER_COMMAND")
 	if browserCmd == "" {
 		log.Fatalf("[BOOTSTRAP] browser_command is required in locolm.json")
 	}

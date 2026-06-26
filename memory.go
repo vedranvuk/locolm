@@ -25,17 +25,54 @@ func init() {
 	}
 
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS memories (
-		key TEXT PRIMARY KEY,
-		value TEXT NOT NULL,
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		key         TEXT NOT NULL,
+		value       TEXT NOT NULL,
+		bucket      TEXT NOT NULL,
+		keywords    TEXT DEFAULT '',
+		created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (key, bucket)
 	)`)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create table: %v", err))
 	}
 }
 
+// memorySave creates or updates a memory in a bucket.
 func memorySave(args map[string]string) (string, error) {
+	bucket, ok := args["bucket"]
+	if !ok || bucket == "" {
+		return "", fmt.Errorf("missing required argument: bucket")
+	}
+	key, ok := args["key"]
+	if !ok || key == "" {
+		return "", fmt.Errorf("missing required argument: key")
+	}
+	value, ok := args["value"]
+	if !ok {
+		return "", fmt.Errorf("missing required argument: value")
+	}
+	keywords := args["keywords"]
+
+	_, err := db.Exec(
+		`INSERT INTO memories (key, value, bucket, keywords, updated_at)
+		 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+		 ON CONFLICT(key, bucket) DO UPDATE SET value = excluded.value, keywords = excluded.keywords, updated_at = CURRENT_TIMESTAMP`,
+		key, value, bucket, keywords,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to save memory: %w", err)
+	}
+
+	return fmt.Sprintf("Memory '%s' saved to bucket '%s'.", key, bucket), nil
+}
+
+// memoryEdit updates an existing memory in a bucket. Errors if not found.
+func memoryEdit(args map[string]string) (string, error) {
+	bucket, ok := args["bucket"]
+	if !ok || bucket == "" {
+		return "", fmt.Errorf("missing required argument: bucket")
+	}
 	key, ok := args["key"]
 	if !ok || key == "" {
 		return "", fmt.Errorf("missing required argument: key")
@@ -45,76 +82,154 @@ func memorySave(args map[string]string) (string, error) {
 		return "", fmt.Errorf("missing required argument: value")
 	}
 
-	_, err := db.Exec(
-		`INSERT INTO memories (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
-		key, value,
+	result, err := db.Exec(
+		`UPDATE memories SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ? AND bucket = ?`,
+		value, key, bucket,
 	)
 	if err != nil {
-		return "", fmt.Errorf("failed to save memory: %w", err)
+		return "", fmt.Errorf("failed to edit memory: %w", err)
 	}
 
-	return fmt.Sprintf("Memory '%s' saved.", key), nil
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return "", fmt.Errorf("memory '%s' not found in bucket '%s'", key, bucket)
+	}
+
+	return fmt.Sprintf("Memory '%s' updated in bucket '%s'.", key, bucket), nil
 }
 
-func memoryLoad(args map[string]string) (string, error) {
-	rows, err := db.Query("SELECT key, value FROM memories ORDER BY updated_at DESC")
+// memoryDelete removes a single memory from a bucket.
+func memoryDelete(args map[string]string) (string, error) {
+	bucket, ok := args["bucket"]
+	if !ok || bucket == "" {
+		return "", fmt.Errorf("missing required argument: bucket")
+	}
+	key, ok := args["key"]
+	if !ok || key == "" {
+		return "", fmt.Errorf("missing required argument: key")
+	}
+
+	result, err := db.Exec("DELETE FROM memories WHERE key = ? AND bucket = ?", key, bucket)
 	if err != nil {
-		return "", fmt.Errorf("failed to load memories: %w", err)
+		return "", fmt.Errorf("failed to delete memory: %w", err)
+	}
+
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return "", fmt.Errorf("memory '%s' not found in bucket '%s'", key, bucket)
+	}
+
+	return fmt.Sprintf("Memory '%s' deleted from bucket '%s'.", key, bucket), nil
+}
+
+// memoryLoad reads a single memory from a bucket.
+func memoryLoad(args map[string]string) (string, error) {
+	bucket, ok := args["bucket"]
+	if !ok || bucket == "" {
+		return "", fmt.Errorf("missing required argument: bucket")
+	}
+	key, ok := args["key"]
+	if !ok || key == "" {
+		return "", fmt.Errorf("missing required argument: key")
+	}
+
+	var value string
+	err := db.QueryRow(
+		"SELECT value FROM memories WHERE key = ? AND bucket = ?", key, bucket,
+	).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("memory '%s' not found in bucket '%s'", key, bucket)
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to load memory: %w", err)
+	}
+
+	return value, nil
+}
+
+// memoryList lists memories. If bucket is provided, lists only that bucket.
+// If bucket is omitted, lists all memories across all buckets.
+func memoryList(args map[string]string) (string, error) {
+	bucket := args["bucket"]
+
+	var rows *sql.Rows
+	var err error
+	if bucket != "" {
+		rows, err = db.Query("SELECT key, value FROM memories WHERE bucket = ? ORDER BY updated_at DESC", bucket)
+	} else {
+		rows, err = db.Query("SELECT bucket, key, value FROM memories ORDER BY bucket, updated_at DESC")
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to list memories: %w", err)
 	}
 	defer rows.Close()
 
 	var results []string
 	for rows.Next() {
 		var key, value string
-		if err := rows.Scan(&key, &value); err != nil {
-			return "", fmt.Errorf("failed to scan row: %w", err)
+		if bucket != "" {
+			if err := rows.Scan(&key, &value); err != nil {
+				return "", fmt.Errorf("failed to scan row: %w", err)
+			}
+			results = append(results, fmt.Sprintf("  %s: %s", key, value))
+		} else {
+			var b string
+			if err := rows.Scan(&b, &key, &value); err != nil {
+				return "", fmt.Errorf("failed to scan row: %w", err)
+			}
+			results = append(results, fmt.Sprintf("[%s] %s: %s", b, key, value))
 		}
-		results = append(results, fmt.Sprintf("%s: %s", key, value))
 	}
 
 	if len(results) == 0 {
+		if bucket != "" {
+			return fmt.Sprintf("No memories in bucket '%s'.", bucket), nil
+		}
 		return "No memories stored.", nil
 	}
-	return fmt.Sprintf("Stored memories:\n%s", strings.Join(results, "\n")), nil
+
+	if bucket != "" {
+		return fmt.Sprintf("Memories in bucket '%s':\n%s", bucket, strings.Join(results, "\n")), nil
+	}
+	return fmt.Sprintf("All memories:\n%s", strings.Join(results, "\n")), nil
 }
 
-func memoryForget(args map[string]string) (string, error) {
-	key, ok := args["key"]
-	if !ok || key == "" {
-		return "", fmt.Errorf("missing required argument: key")
+// memoryDeleteBucket deletes all memories in a bucket.
+func memoryDeleteBucket(args map[string]string) (string, error) {
+	bucket, ok := args["bucket"]
+	if !ok || bucket == "" {
+		return "", fmt.Errorf("missing required argument: bucket")
 	}
 
-	result, err := db.Exec("DELETE FROM memories WHERE key = ?", key)
+	result, err := db.Exec("DELETE FROM memories WHERE bucket = ?", bucket)
 	if err != nil {
-		return "", fmt.Errorf("failed to forget memory: %w", err)
+		return "", fmt.Errorf("failed to delete bucket: %w", err)
 	}
 
 	n, _ := result.RowsAffected()
-	if n == 0 {
-		return fmt.Sprintf("No memory found with key '%s'.", key), nil
-	}
-	return fmt.Sprintf("Memory '%s' forgotten.", key), nil
+	return fmt.Sprintf("Bucket '%s' deleted (%d memories removed).", bucket, n), nil
 }
 
-func memoryList(args map[string]string) (string, error) {
-	rows, err := db.Query("SELECT key FROM memories ORDER BY updated_at DESC")
+// memoryListBuckets returns all bucket names with their memory counts.
+func memoryListBuckets(args map[string]string) (string, error) {
+	rows, err := db.Query("SELECT bucket, COUNT(*) FROM memories GROUP BY bucket ORDER BY bucket")
 	if err != nil {
-		return "", fmt.Errorf("failed to list memories: %w", err)
+		return "", fmt.Errorf("failed to list buckets: %w", err)
 	}
 	defer rows.Close()
 
-	var keys []string
+	var results []string
 	for rows.Next() {
-		var key string
-		if err := rows.Scan(&key); err != nil {
+		var b string
+		var count int
+		if err := rows.Scan(&b, &count); err != nil {
 			return "", fmt.Errorf("failed to scan row: %w", err)
 		}
-		keys = append(keys, key)
+		results = append(results, fmt.Sprintf("%s (%d)", b, count))
 	}
 
-	if len(keys) == 0 {
-		return "No memories stored.", nil
+	if len(results) == 0 {
+		return "No buckets (no memories stored).", nil
 	}
-	return fmt.Sprintf("Memory keys:\n%s", strings.Join(keys, "\n")), nil
+	return strings.Join(results, "\n"), nil
 }

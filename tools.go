@@ -11,12 +11,15 @@ import (
 type ToolFunc func(args map[string]string) (string, error)
 
 var toolRegistry = map[string]ToolFunc{
-	"google_search": searchGoogle,
-	"web_fetch":     webFetch,
-	"memory_save":   memorySave,
-	"memory_load":   memoryLoad,
-	"memory_forget": memoryForget,
-	"memory_list":   memoryList,
+	"google_search":      searchGoogle,
+	"web_fetch":          webFetch,
+	"memory_save":        memorySave,
+	"memory_edit":        memoryEdit,
+	"memory_delete":      memoryDelete,
+	"memory_load":        memoryLoad,
+	"memory_list":        memoryList,
+	"memory_delete_bucket": memoryDeleteBucket,
+	"memory_list_buckets": memoryListBuckets,
 }
 
 // --- Tool definitions ---
@@ -52,48 +55,119 @@ var toolDefinitions = []Tool{
 	},
 	{
 		Name:        "memory_save",
-		Description: "Save or update a memory entry. Use this to remember something for future conversations.",
+		Description: "Create or update a memory in a bucket. Use this to remember something for future conversations.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
+				"bucket": {
+					"type": "string",
+					"description": "The bucket (category) to store the memory in (e.g. 'user', 'work', 'general')"
+				},
 				"key": {
 					"type": "string",
-					"description": "Unique key for the memory (e.g. 'user_preference_theme')"
+					"description": "Unique key for the memory within the bucket (e.g. 'theme_preference')"
 				},
 				"value": {
 					"type": "string",
 					"description": "The memory content to store"
+				},
+				"keywords": {
+					"type": "string",
+					"description": "Optional comma-separated keywords for better search recall (e.g. 'user, theme, dark')"
 				}
 			},
-			"required": ["key", "value"]
+			"required": ["bucket", "key", "value"]
 		}`),
 	},
 	{
-		Name:        "memory_load",
-		Description: "Load all stored memories. Call this at the start of each conversation to recall what you know.",
-		InputSchema: json.RawMessage(`{
-			"type": "object",
-			"properties": {},
-			"required": []
-		}`),
-	},
-	{
-		Name:        "memory_forget",
-		Description: "Delete a specific memory by its key.",
+		Name:        "memory_edit",
+		Description: "Update an existing memory's value in a bucket. Fails if the memory doesn't exist.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
+				"bucket": {
+					"type": "string",
+					"description": "The bucket containing the memory"
+				},
+				"key": {
+					"type": "string",
+					"description": "The key of the memory to update"
+				},
+				"value": {
+					"type": "string",
+					"description": "The new value for the memory"
+				}
+			},
+			"required": ["bucket", "key", "value"]
+		}`),
+	},
+	{
+		Name:        "memory_delete",
+		Description: "Delete a specific memory from a bucket.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"bucket": {
+					"type": "string",
+					"description": "The bucket containing the memory"
+				},
 				"key": {
 					"type": "string",
 					"description": "The key of the memory to delete"
 				}
 			},
-			"required": ["key"]
+			"required": ["bucket", "key"]
+		}`),
+	},
+	{
+		Name:        "memory_load",
+		Description: "Load a single memory's value from a bucket.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"bucket": {
+					"type": "string",
+					"description": "The bucket containing the memory"
+				},
+				"key": {
+					"type": "string",
+					"description": "The key of the memory to load"
+				}
+			},
+			"required": ["bucket", "key"]
 		}`),
 	},
 	{
 		Name:        "memory_list",
-		Description: "List all stored memory keys.",
+		Description: "List memories. Provide a bucket to list only that bucket; omit to list all memories across all buckets.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"bucket": {
+					"type": "string",
+					"description": "Optional bucket name. If omitted, lists all memories across all buckets."
+				}
+			},
+			"required": []
+		}`),
+	},
+	{
+		Name:        "memory_delete_bucket",
+		Description: "Delete a bucket and all memories in it.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"bucket": {
+					"type": "string",
+					"description": "The name of the bucket to delete"
+				}
+			},
+			"required": ["bucket"]
+		}`),
+	},
+	{
+		Name:        "memory_list_buckets",
+		Description: "List all memory buckets with their memory counts.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {},

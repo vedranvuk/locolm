@@ -1,0 +1,1 @@
+* needs system info at startup, date, t
