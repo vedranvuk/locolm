@@ -1,1 +1,0 @@
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"wikidata_query","arguments":{"mode":"sparql","query":"SELECT ?item ?itemLabel WHERE { ?item wdt:P31 wd:Q5 . SERVICE wikibase:label { bd:serviceParam wikibase:language \"en\" . } } LIMIT 3","lang":"en"}}}
