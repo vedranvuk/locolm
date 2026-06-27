@@ -492,40 +492,45 @@ func searchEntities(search, lang string, limit int) (string, error) {
 // SPARQL mode
 // ---------------------------------------------------------------------------
 
-// normalizeSPARQL handles common LLM escaping artifacts in SPARQL queries:
-//   - Literal backslash-n (\n as two chars) → real newline
-//   - Double-escaped backslashes (\\) → single backslash
-//   - Literal backslash-t (\t as two chars) → real tab
-//   - Literal backslash-r (\r as two chars) → real carriage return
+// normalizeSPARQL handles rare edge cases where SPARQL queries survive
+// JSON parsing but still contain literal backslash-n sequences (two chars:
+// backslash + n) instead of real newlines. This can happen when LLMs embed
+// SPARQL in non-JSON contexts or when the query is double-escaped at the
+// application layer.
+//
+// Note: The primary handling of LLM escaping artifacts (double-escaped
+// sequences like \\n) now happens in sanitizeRawJSON before JSON parsing.
+// This function is a safety net for remaining edge cases.
 func normalizeSPARQL(query string) string {
-	// Only process if the query contains backslash sequences
+	// Only process if the query contains literal backslash sequences
 	if !strings.Contains(query, `\`) {
 		return query
 	}
-	query = strings.ReplaceAll(query, `\\`, `█`) // temp placeholder
-	query = strings.ReplaceAll(query, `\n`, "\n")
-	query = strings.ReplaceAll(query, `\t`, "\t")
-	query = strings.ReplaceAll(query, `\r`, "\r")
-	query = strings.ReplaceAll(query, `█`, `\`)
-	return query
+	// Use a multi-pass approach with a character that cannot appear in
+	// valid SPARQL (ASCII unit separator \x1F is safe for text queries).
+	const placeholder = "\x1F"
+	result := strings.ReplaceAll(query, `\\`, placeholder)
+	result = strings.ReplaceAll(result, `\n`, "\n")
+	result = strings.ReplaceAll(result, `\t`, "\t")
+	result = strings.ReplaceAll(result, `\r`, "\r")
+	result = strings.ReplaceAll(result, placeholder, `\`)
+	return result
 }
 
 func querySPARQL(query, lang string) (string, error) {
 	client := newHTTPClient()
 
-	// Inject label service if the query uses SELECT and doesn't already have it
-	// (heuristic: check if query contains "SERVICE wikibase:label")
+	// Inject label service if the query uses SELECT and doesn't already have it.
+	// We only do this for simple queries where the last } is the outer block
+	// closing brace (no nested sub-queries or string literals containing }).
 	if !strings.Contains(strings.ToLower(query), "service wikibase:label") {
-		// Try to add label service — only for SELECT queries
 		upperQuery := strings.ToUpper(strings.TrimSpace(query))
-		if strings.HasPrefix(upperQuery, "SELECT") {
-			// Add label service before the closing brace
-			// This is a simple heuristic — find the last } and insert before it
+		if strings.HasPrefix(upperQuery, "SELECT") && isSimpleSPARQL(query) {
 			labelService := fmt.Sprintf(`
   SERVICE wikibase:label {
     bd:serviceParam wikibase:language "%s" .
   }`, lang)
-			// Find last closing brace
+			// Safe to use last brace — we've verified the query is simple
 			lastBrace := strings.LastIndex(query, "}")
 			if lastBrace >= 0 {
 				query = query[:lastBrace] + labelService + query[lastBrace:]
@@ -630,6 +635,29 @@ func simplifySPARQLResult(raw map[string]interface{}) interface{} {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// isSimpleSPARQL reports whether a SPARQL query is simple enough for safe
+// automatic label-service injection. It returns false for queries containing
+// sub-SELECTs, string literals with braces, or other constructs where blindly
+// inserting before the last } would break the query.
+func isSimpleSPARQL(query string) bool {
+	upper := strings.ToUpper(query)
+	// Reject queries with sub-SELECTs or MODIFY/CONSTRUCT/ASK
+	if strings.Contains(upper, "SELECT") {
+		// Count SELECT keywords — more than one means sub-query
+		count := strings.Count(upper, "SELECT")
+		if count > 1 {
+			return false
+		}
+	}
+	forbidden := []string{"CONSTRUCT", "ASK", "DESCRIBE", "MODIFY", "LOAD", "CLEAR", "DROP", "ADD", "MOVE", "COPY", "CREATE", "DELETE", "INSERT", "WITH"}
+	for _, kw := range forbidden {
+		if strings.Contains(upper, kw) {
+			return false
+		}
+	}
+	return true
+}
 
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {

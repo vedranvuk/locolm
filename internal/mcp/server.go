@@ -150,6 +150,12 @@ func RegisterTool(name, description string, inputSchema json.RawMessage, handler
 // This function tracks whether we are inside a JSON string (respecting
 // backslash escapes) and replaces control characters with their \uXXXX
 // escape sequences.
+//
+// It also handles a common LLM artifact: double-escaped sequences like \\n
+// (literal backslash-n as 4 characters in the raw input: backslash, backslash, n).
+// In valid JSON, \\n represents a literal backslash followed by 'n'. But LLMs
+// often emit \\n when they mean a newline. We detect this pattern and convert
+// it to the proper JSON escape \n so the parsed string contains a real newline.
 func sanitizeRawJSON(raw []byte) []byte {
 	var buf strings.Builder
 	buf.Grow(len(raw))
@@ -160,6 +166,28 @@ func sanitizeRawJSON(raw []byte) []byte {
 
 		if inString {
 			if c == '\\' {
+				// Check for double-escaped sequences: \\n, \\t, \\r
+				// These are 4-char sequences in raw JSON: \, \, n
+				// which JSON parses as literal backslash + n.
+				// LLMs often emit these when they mean a real newline.
+				if i+3 < len(raw) && raw[i+1] == '\\' {
+					next := raw[i+2]
+					switch next {
+					case 'n':
+						buf.WriteString(`\n`)
+						i += 2
+						continue
+					case 't':
+						buf.WriteString(`\t`)
+						i += 2
+						continue
+					case 'r':
+						buf.WriteString(`\r`)
+						i += 2
+						continue
+					}
+				}
+
 				// Escape sequence: copy the backslash and the next character
 				buf.WriteByte(c)
 				if i+1 < len(raw) {

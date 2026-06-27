@@ -1,0 +1,3 @@
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"wikidata_query","arguments":{"mode":"sparql","query":"SELECT ?x WHERE {
+  ?x wdt:P31 wd:Q5
+} LIMIT 1","lang":"en"}}}
