@@ -6,8 +6,10 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -56,8 +58,13 @@ func (s *Server) AddTool(name, description string, inputSchema json.RawMessage, 
 		// Parse arguments from the raw JSON-RPC params
 		args := make(map[string]string)
 		if req.Params.Arguments != nil {
+			// Sanitize raw arguments: LLMs sometimes emit literal newlines or
+			// other control characters inside JSON string values, which produces
+			// invalid JSON. Replace them with escaped equivalents before parsing.
+			sanitized := sanitizeRawJSON(req.Params.Arguments)
+
 			var rawArgs map[string]json.RawMessage
-			if err := json.Unmarshal(req.Params.Arguments, &rawArgs); err != nil {
+			if err := json.Unmarshal(sanitized, &rawArgs); err != nil {
 				return &mcp.CallToolResult{
 					Content: []mcp.Content{
 						&mcp.TextContent{Text: "failed to parse arguments: " + err.Error()},
@@ -133,4 +140,66 @@ func RegisterTool(name, description string, inputSchema json.RawMessage, handler
 	pendingRegistrations = append(pendingRegistrations, func(s *Server) {
 		s.AddTool(name, description, inputSchema, handler)
 	})
+}
+
+// sanitizeRawJSON replaces literal control characters (newlines, tabs, etc.)
+// inside JSON string values with their escaped equivalents. LLMs sometimes
+// emit raw newlines within JSON string values (e.g. in SPARQL queries),
+// which produces invalid JSON that the parser rejects.
+//
+// This function tracks whether we are inside a JSON string (respecting
+// backslash escapes) and replaces control characters with their \uXXXX
+// escape sequences.
+func sanitizeRawJSON(raw []byte) []byte {
+	var buf strings.Builder
+	buf.Grow(len(raw))
+
+	inString := false
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+
+		if inString {
+			if c == '\\' {
+				// Escape sequence: copy the backslash and the next character
+				buf.WriteByte(c)
+				if i+1 < len(raw) {
+					i++
+					buf.WriteByte(raw[i])
+				}
+				continue
+			}
+			if c == '"' {
+				// End of string
+				inString = false
+				buf.WriteByte(c)
+				continue
+			}
+			// Inside a string: replace control characters
+			switch c {
+			case '\n':
+				buf.WriteString(`\n`)
+			case '\r':
+				buf.WriteString(`\r`)
+			case '\t':
+				buf.WriteString(`\t`)
+			case '\b':
+				buf.WriteString(`\b`)
+			case '\f':
+				buf.WriteString(`\f`)
+			default:
+				if c < 0x20 {
+					buf.WriteString(fmt.Sprintf(`\u%04x`, c))
+				} else {
+					buf.WriteByte(c)
+				}
+			}
+		} else {
+			if c == '"' {
+				inString = true
+			}
+			buf.WriteByte(c)
+		}
+	}
+
+	return []byte(buf.String())
 }

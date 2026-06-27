@@ -69,6 +69,11 @@ func wikidataQuery(args map[string]string) (string, error) {
 		return "", fmt.Errorf("missing required argument: query")
 	}
 
+	// Normalize SPARQL queries: LLMs may send escaped newlines (\\n as literal
+	// backslash-n) or double-escaped backslashes. Convert them to real newlines
+	// so the SPARQL engine receives a valid query.
+	query = normalizeSPARQL(query)
+
 	lang := args["lang"]
 	if lang == "" {
 		lang = "en"
@@ -486,6 +491,24 @@ func searchEntities(search, lang string, limit int) (string, error) {
 // ---------------------------------------------------------------------------
 // SPARQL mode
 // ---------------------------------------------------------------------------
+
+// normalizeSPARQL handles common LLM escaping artifacts in SPARQL queries:
+//   - Literal backslash-n (\n as two chars) → real newline
+//   - Double-escaped backslashes (\\) → single backslash
+//   - Literal backslash-t (\t as two chars) → real tab
+//   - Literal backslash-r (\r as two chars) → real carriage return
+func normalizeSPARQL(query string) string {
+	// Only process if the query contains backslash sequences
+	if !strings.Contains(query, `\`) {
+		return query
+	}
+	query = strings.ReplaceAll(query, `\\`, `█`) // temp placeholder
+	query = strings.ReplaceAll(query, `\n`, "\n")
+	query = strings.ReplaceAll(query, `\t`, "\t")
+	query = strings.ReplaceAll(query, `\r`, "\r")
+	query = strings.ReplaceAll(query, `█`, `\`)
+	return query
+}
 
 func querySPARQL(query, lang string) (string, error) {
 	client := newHTTPClient()
