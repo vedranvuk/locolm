@@ -8,7 +8,8 @@ locolm ties together everything you need for a local AI experience:
 
 - **llama-server** — automatically starts the LLM engine with your chosen model
 - **Chrome app** — opens llama-server as a standalone windowed app in your browser
-- **MCP server** — gives the LLM access to tools so it can search the web, read pages, and remember things across conversations
+- **MCP server** — gives the LLM access to tools so it can search the web, read pages, work with files, and remember things across conversations
+- **Filesystem** — sandboxed file read/write/delete/find so the LLM can work with your local files
 - **Memory** — SQLite-backed persistent memory so the LLM recalls context between sessions
 
 ## Quick start
@@ -33,8 +34,15 @@ Point your MCP client (or llama-server itself) at `http://127.0.0.1:11501`.
 |------|-------------|
 | `google_search` | Search the web via Google Custom Search |
 | `exa_search` | Search the web via Exa AI (neural search with highlights and synthesis) |
-| `web_fetch` | Fetch and read a web page (HTML, PDF, plain text) |\| `sys_info` | Get system information (date, OS, arch, hostname, uptime, etc.) |
-| `fs_run` | Execute a command and capture its output |
+| `web_fetch` | Fetch and read a web page (HTML, PDF, plain text) |
+| `sys_info` | Get system information (date, OS, arch, hostname, uptime, etc.) |
+| `fs_run` | Execute a command and capture its output (with allowlist security) |
+| `fs_list` | List directory contents |
+| `fs_read` | Read a text file |
+| `fs_write` | Create or overwrite a file |
+| `fs_delete` | Delete a single file |
+| `fs_find` | Find files by glob pattern |
+| `fs_tree` | Display directory tree structure |
 | `memory_save` | Create or update a memory in a bucket |
 | `memory_edit` | Update an existing memory (fails if not found) |
 | `memory_delete` | Delete a specific memory |
@@ -52,9 +60,23 @@ Configuration is via `locolm.json` in the working directory or exe directory:
   "mcp_port": "11501",
   "llama_server_command": "llama-server -m model.gguf",
   "browser_command": "chrome.exe",
-  "web_fetch_max_bytes": 5242880,
-  "web_fetch_max_text_bytes": 204800,
-  "web_fetch_timeout_seconds": 30
+  "web_fetch": {
+    "max_bytes": 5242880,
+    "max_text_bytes": 204800,
+    "timeout_sec": 30
+  },
+  "fs": {
+    "allowed_paths": [".", "~"],
+    "read_max_bytes": 1048576,
+    "write_max_bytes": 1048576,
+    "find_max_results": 200,
+    "tree_max_depth": 3
+  },
+  "exec": {
+    "allowed_commands": ["^git\\s", "^go\\s", "^python\\s", "^node\\s", "^npm\\s"],
+    "timeout_sec": 30,
+    "max_output_bytes": 102400
+  }
 }
 ```
 
@@ -65,6 +87,17 @@ Third-party API keys are set via environment variables:
 | `GOOGLE_API_KEY` | Google Search API key |
 | `GOOGLE_CSE_ID` | Google Custom Search Engine ID |
 | `EXA_API_KEY` | Exa AI search API key |
+
+## Data files
+
+locolm stores its data next to the executable:
+
+| File | Purpose |
+|------|---------|
+| `locolm.json` | Configuration |
+| `locolm.db` | SQLite memory database |
+
+Both must be in the same directory as `locolm.exe`. When running via `go run ./cmd/locolm/`, they must be in the project root (the working directory).
 
 ## System prompt
 

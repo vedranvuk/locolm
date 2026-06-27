@@ -22,26 +22,42 @@ import (
 // Config
 // ---------------------------------------------------------------------------
 
-type webFetchConfig struct {
+// WebFetchConfig holds all configuration for the web_fetch tool.
+type WebFetchConfig struct {
 	MaxBytes     int64
 	MaxTextBytes int64
 	Timeout      time.Duration
 }
 
-var webFetchCfg = webFetchConfig{
+// webFetchCfg is the package-level config with safe defaults.
+var webFetchCfg = WebFetchConfig{
 	MaxBytes:     5 * 1024 * 1024,
 	MaxTextBytes: 200 * 1024,
 	Timeout:      30 * time.Second,
 }
 
-// SetWebFetchConfig updates the web fetch configuration. Called from
-// config.LoadConfig() via the main package.
-func SetWebFetchConfig(maxBytes, maxTextBytes int64, timeoutSec int) {
-	webFetchCfg = webFetchConfig{
-		MaxBytes:     maxBytes,
-		MaxTextBytes: maxTextBytes,
-		Timeout:      time.Duration(timeoutSec) * time.Second,
-	}
+func init() {
+	// Register config loader
+	tool.RegisterConfig("web_fetch", func(raw json.RawMessage) error {
+		if len(raw) == 0 {
+			return nil
+		}
+		// Unmarshal from JSON-friendly field names
+		var c struct {
+			MaxBytes     int64 `json:"max_bytes"`
+			MaxTextBytes int64 `json:"max_text_bytes"`
+			TimeoutSec   int   `json:"timeout_sec"`
+		}
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return err
+		}
+		webFetchCfg = WebFetchConfig{
+			MaxBytes:     c.MaxBytes,
+			MaxTextBytes: c.MaxTextBytes,
+			Timeout:      time.Duration(c.TimeoutSec) * time.Second,
+		}
+		return nil
+	})
 }
 
 // ---------------------------------------------------------------------------

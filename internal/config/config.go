@@ -4,30 +4,35 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"github.com/vedranvuk/locolm/internal/tool"
 )
 
 // Config holds all locolm configuration. Loaded from locolm.json with
 // GOOGLE_* / EXA_* env overrides for third-party credentials.
+//
+// Tool-specific configs are stored as raw JSON and dispatched to each tool
+// package's registered config loader via tool.LoadConfigs().
 type Config struct {
-	MCPPort              string `json:"mcp_port"`
-	LlamaServerCommand   string `json:"llama_server_command"`
-	BrowserCommand       string `json:"browser_command"`
-	GoogleAPIKey         string `json:"google_api_key"`
-	GoogleCSEID          string `json:"google_cse_id"`
-	WebFetchMaxBytes     int64  `json:"web_fetch_max_bytes"`
-	WebFetchMaxTextBytes int64  `json:"web_fetch_max_text_bytes"`
-	WebFetchTimeoutSec   int    `json:"web_fetch_timeout_seconds"`
+	MCPPort            string `json:"mcp_port"`
+	LlamaServerCommand string `json:"llama_server_command"`
+	BrowserCommand     string `json:"browser_command"`
+	GoogleAPIKey       string `json:"google_api_key"`
+	GoogleCSEID        string `json:"google_cse_id"`
+
+	// Raw tool configs — each tool package unmarshals its own.
+	// Keys match the JSON object keys in locolm.json.
+	WebFetch json.RawMessage `json:"web_fetch,omitempty"`
+	FS       json.RawMessage `json:"fs,omitempty"`
+	Exec     json.RawMessage `json:"exec,omitempty"`
+	Search   json.RawMessage `json:"search,omitempty"`
 }
 
-// LoadConfig reads locolm.json, applies GOOGLE_* env overrides, and returns
-// the resolved config. locolm.json is read from the working directory (go run .)
-// or the exe directory (binary).
+// LoadConfig reads locolm.json, applies GOOGLE_* env overrides, dispatches
+// tool-specific configs to registered loaders, and returns the resolved config.
+// locolm.json is read from the working directory (go run .) or the exe directory.
 func LoadConfig() Config {
-	cfg := Config{
-		WebFetchMaxBytes:     5 * 1024 * 1024,
-		WebFetchMaxTextBytes: 200 * 1024,
-		WebFetchTimeoutSec:   30,
-	}
+	cfg := Config{}
 
 	wd, _ := os.Getwd()
 	jsonPath := filepath.Join(wd, "locolm.json")
@@ -49,6 +54,15 @@ func LoadConfig() Config {
 	if v := os.Getenv("GOOGLE_CSE_ID"); v != "" {
 		cfg.GoogleCSEID = v
 	}
+
+	// Dispatch raw tool configs to registered loaders
+	rawConfigs := map[string]json.RawMessage{
+		"web_fetch": cfg.WebFetch,
+		"fs":       cfg.FS,
+		"exec":     cfg.Exec,
+		"search":   cfg.Search,
+	}
+	tool.LoadConfigs(rawConfigs)
 
 	return cfg
 }
