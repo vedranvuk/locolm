@@ -1,4 +1,4 @@
-package main
+package bootstrap
 
 import (
 	"log"
@@ -11,9 +11,12 @@ import (
 
 const llamaURL = "http://127.0.0.1:11500"
 
-var llamaProcess *os.Process
+// LlamaProcess holds the handle for the llama-server process so we can
+// gracefully shut it down on exit.
+var LlamaProcess *os.Process
 
-// Bootstrap starts llama-server, waits for it to be ready, then launches the browser.
+// Bootstrap starts llama-server, waits for it to be ready, then launches
+// the browser.
 func Bootstrap(llamaCmd, browserCmd string) {
 	if llamaCmd == "" {
 		log.Fatalf("[BOOTSTRAP] llama_server_command is required in locolm.json")
@@ -27,11 +30,11 @@ func Bootstrap(llamaCmd, browserCmd string) {
 	if err := llama.Start(); err != nil {
 		log.Fatalf("[BOOTSTRAP] Failed to start llama-server: %v", err)
 	}
-	llamaProcess = llama.Process
+	LlamaProcess = llama.Process
 
 	log.Printf("[BOOTSTRAP] Waiting for llama-server to be ready...")
 	if !waitForServer(llamaURL+"/health", 120*time.Second) {
-		llamaProcess.Kill()
+		LlamaProcess.Kill()
 		log.Fatalf("[BOOTSTRAP] llama-server did not become ready in time")
 	}
 
@@ -52,12 +55,12 @@ func Bootstrap(llamaCmd, browserCmd string) {
 
 // StopLlama sends SIGTERM to llama-server and waits for it to exit.
 func StopLlama() {
-	if llamaProcess == nil {
+	if LlamaProcess == nil {
 		return
 	}
-	log.Printf("[BOOTSTRAP] Stopping llama-server (PID %d)...", llamaProcess.Pid)
-	llamaProcess.Signal(syscall.SIGTERM)
-	llamaProcess.Wait()
+	log.Printf("[BOOTSTRAP] Stopping llama-server (PID %d)...", LlamaProcess.Pid)
+	LlamaProcess.Signal(syscall.SIGTERM)
+	LlamaProcess.Wait()
 	log.Printf("[BOOTSTRAP] llama-server stopped.")
 }
 

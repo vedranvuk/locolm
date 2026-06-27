@@ -1,4 +1,4 @@
-package main
+package search
 
 import (
 	"bytes"
@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/vedranvuk/locolm/internal/tool"
 )
 
 // --- Exa Search types ---
@@ -33,29 +35,29 @@ type exaContents struct {
 }
 
 type exaText struct {
-	MaxCharacters      int    `json:"maxCharacters,omitempty"`
-	Verbosity         string `json:"verbosity,omitempty"`
-	IncludeHTMLTags   bool   `json:"includeHtmlTags,omitempty"`
+	MaxCharacters    int    `json:"maxCharacters,omitempty"`
+	Verbosity       string `json:"verbosity,omitempty"`
+	IncludeHTMLTags bool   `json:"includeHTMLTags,omitempty"`
 }
 
 type exaSearchResponse struct {
-	RequestID  string       `json:"requestId"`
-	SearchType string       `json:"searchType"`
-	Results    []exaResult  `json:"results"`
-	Output     *exaOutput   `json:"output,omitempty"`
-	Cost       exaCost      `json:"costDollars"`
+	RequestID  string      `json:"requestId"`
+	SearchType string      `json:"searchType"`
+	Results    []exaResult `json:"results"`
+	Output     *exaOutput  `json:"output,omitempty"`
+	Cost       exaCost     `json:"costDollars"`
 }
 
 type exaResult struct {
-	Title         string    `json:"title"`
-	URL           string    `json:"url"`
-	ID            string    `json:"id"`
-	PublishedDate string    `json:"publishedDate"`
-	Author        string    `json:"author"`
-	Text          string    `json:"text"`
-	Highlights    []string  `json:"highlights"`
-	HighlightScores []float64 `json:"highlightScores"`
-	Summary       string    `json:"summary"`
+	Title            string    `json:"title"`
+	URL              string    `json:"url"`
+	ID               string    `json:"id"`
+	PublishedDate    string    `json:"publishedDate"`
+	Author           string    `json:"author"`
+	Text             string    `json:"text"`
+	Highlights       []string  `json:"highlights"`
+	HighlightScores  []float64 `json:"highlightScores"`
+	Summary          string    `json:"summary"`
 }
 
 type exaOutput struct {
@@ -76,6 +78,29 @@ type exaCitation struct {
 
 type exaCost struct {
 	Total float64 `json:"total"`
+}
+
+func init() {
+	tool.Register("exa_search", tool.Tool{
+		Name:        "exa_search",
+		Description: "Search the web using Exa AI (neural search with highlights and synthesized answers). Requires EXA_API_KEY env var.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"query":             {"type": "string", "description": "The search query"},
+				"type":              {"type": "string", "description": "Search type: auto (default), fast, instant, deep, deep-lite, deep-reasoning"},
+				"num":               {"type": "string", "description": "Number of results (default 10)"},
+				"include_domains":   {"type": "string", "description": "Comma-separated list of domains to restrict search to (e.g. 'github.com,stackoverflow.com')"},
+				"exclude_domains":   {"type": "string", "description": "Comma-separated list of domains to exclude from results"},
+				"start_date":        {"type": "string", "description": "Start date filter (e.g. '2025-01-01' or '2025-01-01T00:00:00Z')"},
+				"end_date":          {"type": "string", "description": "End date filter (e.g. '2025-12-31' or '2025-12-31T23:59:59Z')"},
+				"system_prompt":     {"type": "string", "description": "System prompt to guide synthesis behavior (used with output_schema)"},
+				"output_schema":     {"type": "string", "description": "JSON Schema string for structured output (triggers synthesis)"}
+			},
+			"required": ["query"]
+		}`),
+		Func: searchExa,
+	})
 }
 
 // --- Exa Search implementation ---
@@ -208,7 +233,8 @@ func searchExa(args map[string]string) (string, error) {
 	return output, nil
 }
 
-// splitAndTrim splits a comma-separated string and trims whitespace
+// --- String helpers ---
+
 func splitAndTrim(s string) []string {
 	var result []string
 	for _, part := range splitString(s, ",") {

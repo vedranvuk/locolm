@@ -1,13 +1,37 @@
-package main
+package exec
 
 import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
 	"time"
+
+	"github.com/vedranvuk/locolm/internal/tool"
 )
 
 const maxOutputBytes = 102400 // 100 KB
+
+func init() {
+	tool.Register("fs_run", tool.Tool{
+		Name:        "fs_run",
+		Description: "Execute a command and capture its output. Runs via cmd /C on Windows.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"command": {
+					"type": "string",
+					"description": "The command to execute (e.g. 'dir', 'git status', 'python script.py')"
+				},
+				"timeout": {
+					"type": "string",
+					"description": "Optional timeout in seconds (default 30)"
+				}
+			},
+			"required": ["command"]
+		}`),
+		Func: runCommand,
+	})
+}
 
 func runCommand(args map[string]string) (string, error) {
 	command := args["command"]
@@ -59,7 +83,7 @@ func runCommand(args map[string]string) (string, error) {
 func formatOutput(exitCode int, stdout, stderr []byte, timedOut bool) string {
 	if len(stdout) > maxOutputBytes {
 		stdout = stdout[:maxOutputBytes]
-		stdout = append(stderr, []byte("\n...[truncated]")...)
+		stdout = append(stdout, []byte("\n...[truncated]")...)
 	}
 	if len(stderr) > maxOutputBytes {
 		stderr = stderr[:maxOutputBytes]

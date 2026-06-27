@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"encoding/json"
@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 )
 
+// Config holds all locolm configuration. Loaded from locolm.json with
+// GOOGLE_* / EXA_* env overrides for third-party credentials.
 type Config struct {
 	MCPPort              string `json:"mcp_port"`
 	LlamaServerCommand   string `json:"llama_server_command"`
@@ -17,7 +19,9 @@ type Config struct {
 	WebFetchTimeoutSec   int    `json:"web_fetch_timeout_seconds"`
 }
 
-// LoadConfig reads locolm.json, applies GOOGLE_* env overrides, and returns the resolved config.
+// LoadConfig reads locolm.json, applies GOOGLE_* env overrides, and returns
+// the resolved config. locolm.json is read from the working directory (go run .)
+// or the exe directory (binary).
 func LoadConfig() Config {
 	cfg := Config{
 		WebFetchMaxBytes:     5 * 1024 * 1024,
@@ -25,7 +29,6 @@ func LoadConfig() Config {
 		WebFetchTimeoutSec:   30,
 	}
 
-	// 1. Read locolm.json from working directory (go run .) or exe directory (binary)
 	wd, _ := os.Getwd()
 	jsonPath := filepath.Join(wd, "locolm.json")
 	data, err := os.ReadFile(jsonPath)
@@ -39,7 +42,7 @@ func LoadConfig() Config {
 		json.Unmarshal(data, &cfg)
 	}
 
-	// 2. Third-party env vars override JSON
+	// Third-party env vars override JSON
 	if v := os.Getenv("GOOGLE_API_KEY"); v != "" {
 		cfg.GoogleAPIKey = v
 	}
@@ -47,9 +50,5 @@ func LoadConfig() Config {
 		cfg.GoogleCSEID = v
 	}
 
-	SetWebFetchConfig(cfg.WebFetchMaxBytes, cfg.WebFetchMaxTextBytes, cfg.WebFetchTimeoutSec)
-
 	return cfg
 }
-
-

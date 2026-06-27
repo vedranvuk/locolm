@@ -1,7 +1,8 @@
-package main
+package web
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"codeberg.org/readeck/go-readability/v2"
+	"github.com/vedranvuk/locolm/internal/tool"
 	pdf "github.com/ledongthuc/pdf"
 )
 
@@ -32,6 +34,8 @@ var webFetchCfg = webFetchConfig{
 	Timeout:      30 * time.Second,
 }
 
+// SetWebFetchConfig updates the web fetch configuration. Called from
+// config.LoadConfig() via the main package.
 func SetWebFetchConfig(maxBytes, maxTextBytes int64, timeoutSec int) {
 	webFetchCfg = webFetchConfig{
 		MaxBytes:     maxBytes,
@@ -80,6 +84,24 @@ var blockedTypes = []string{
 	"image/",
 	"audio/",
 	"video/",
+}
+
+func init() {
+	tool.Register("web_fetch", tool.Tool{
+		Name:        "web_fetch",
+		Description: "Fetch and read the content of a web page",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"url": {
+					"type": "string",
+					"description": "The URL of the web page to fetch"
+				}
+			},
+			"required": ["url"]
+		}`),
+		Func: webFetch,
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -391,5 +413,3 @@ func isPrivateIP(ip net.IP) bool {
 	}
 	return false
 }
-
-

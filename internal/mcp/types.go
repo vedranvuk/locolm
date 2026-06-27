@@ -1,9 +1,8 @@
-package main
+package mcp
 
 import "encoding/json"
 
-// --- MCP Protocol Types ---
-
+// JSONRPCRequest represents an incoming JSON-RPC 2.0 request.
 type JSONRPCRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      interface{}     `json:"id"`
@@ -11,6 +10,7 @@ type JSONRPCRequest struct {
 	Params  json.RawMessage `json:"params"`
 }
 
+// JSONRPCResponse represents an outgoing JSON-RPC 2.0 response.
 type JSONRPCResponse struct {
 	JSONRPC string      `json:"jsonrpc"`
 	ID      interface{} `json:"id"`
@@ -18,13 +18,8 @@ type JSONRPCResponse struct {
 	Error   *RPCError   `json:"error,omitempty"`
 }
 
+// RPCError represents a JSON-RPC 2.0 error object.
 type RPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
-}
-
-type Tool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema  json.RawMessage `json:"inputSchema"`
 }

@@ -1,18 +1,35 @@
-package main
+package sysinfo
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
 	"time"
+
+	"github.com/vedranvuk/locolm/internal/tool"
 )
 
-// SysInfo is the tool function registered in the tool registry.
-func SysInfo(args map[string]string) (string, error) {
+// startTime is set by main.go when the process starts.
+var startTime = time.Now()
+
+func init() {
+	tool.Register("sys_info", tool.Tool{
+		Name:        "sys_info",
+		Description: "Get current system information: date, time, timezone, OS, architecture, hostname, working directory, user, Go version, and uptime. Call this at the start of every conversation to orient yourself.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {},
+			"required": []
+		}`),
+		Func: sysInfoTool,
+	})
+}
+
+func sysInfoTool(args map[string]string) (string, error) {
 	return sysInfo()
 }
 
-// sysInfo returns a formatted snapshot of system and environment information.
 func sysInfo() (string, error) {
 	now := time.Now()
 
@@ -52,18 +69,15 @@ func sysInfo() (string, error) {
 			"─────────────────────────────\n"+
 			"Date:       %s\n"+
 			"Time:       %s\n"+
-			"Timezone:    %s (UTC%s)\n"+
+			"Timezone:   %s (UTC%s)\n"+
 			"OS:         %s\n"+
 			"Arch:       %s\n"+
 			"Hostname:   %s\n"+
 			"CWD:        %s\n"+
 			"User:       %s\n"+
-			"Go Version:  %s\n"+
+			"Go Version: %s\n"+
 			"Uptime:     %s\n"+
 			"─────────────────────────────",
 		date, tm, tz, utcOff, osName, arch, hostname, cwd, user, goVer, uptime,
 	), nil
 }
-
-// startTime is set by main.go when the process starts.
-var startTime = time.Now()

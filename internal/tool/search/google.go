@@ -1,4 +1,4 @@
-package main
+package search
 
 import (
 	"encoding/json"
@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/vedranvuk/locolm/internal/tool"
 )
 
 // --- Google Custom Search types ---
@@ -20,6 +22,24 @@ type SearchResponse struct {
 		DisplayLink string `json:"displayLink"`
 		Snippet     string `json:"snippet"`
 	} `json:"items"`
+}
+
+func init() {
+	tool.Register("google_search", tool.Tool{
+		Name:        "google_search",
+		Description: "Search the web using Google Custom Search",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"query": {
+					"type": "string",
+					"description": "The search query"
+				}
+			},
+			"required": ["query"]
+		}`),
+		Func: searchGoogle,
+	})
 }
 
 // --- Google Search implementation ---
@@ -78,5 +98,6 @@ func searchGoogleRaw(query string) (string, error) {
 		}
 		results = append(results, entry)
 	}
+
 	return fmt.Sprintf("Found %d results:\n\n%s", len(searchResp.Items), strings.Join(results, "\n\n")), nil
 }

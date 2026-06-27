@@ -1,18 +1,21 @@
-package main
+package memory
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/vedranvuk/locolm/internal/tool"
 	_ "modernc.org/sqlite"
 )
 
 var db *sql.DB
 
 func init() {
+	// Open database and create table.
 	exePath, err := os.Executable()
 	if err != nil {
 		exePath = "."
@@ -36,9 +39,107 @@ func init() {
 	if err != nil {
 		panic(fmt.Sprintf("failed to create table: %v", err))
 	}
+
+	// Register all memory tools.
+	tool.Register("memory_save", tool.Tool{
+		Name:        "memory_save",
+		Description: "Create or update a memory in a bucket. Use this to remember something for future conversations.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"bucket":  {"type": "string", "description": "The bucket (category) to store the memory in (e.g. 'user', 'work', 'general')"},
+				"key":     {"type": "string", "description": "Unique key for the memory within the bucket (e.g. 'theme_preference')"},
+				"value":   {"type": "string", "description": "The memory content to store"},
+				"keywords":{"type": "string", "description": "Optional comma-separated keywords for better search recall (e.g. 'user, theme, dark')"}
+			},
+			"required": ["bucket", "key", "value"]
+		}`),
+		Func: memorySave,
+	})
+
+	tool.Register("memory_edit", tool.Tool{
+		Name:        "memory_edit",
+		Description: "Update an existing memory's value in a bucket. Fails if the memory doesn't exist.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"bucket": {"type": "string", "description": "The bucket containing the memory"},
+				"key":    {"type": "string", "description": "The key of the memory to update"},
+				"value":  {"type": "string", "description": "The new value for the memory"}
+			},
+			"required": ["bucket", "key", "value"]
+		}`),
+		Func: memoryEdit,
+	})
+
+	tool.Register("memory_delete", tool.Tool{
+		Name:        "memory_delete",
+		Description: "Delete a specific memory from a bucket.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"bucket": {"type": "string", "description": "The bucket containing the memory"},
+				"key":    {"type": "string", "description": "The key of the memory to delete"}
+			},
+			"required": ["bucket", "key"]
+		}`),
+		Func: memoryDelete,
+	})
+
+	tool.Register("memory_load", tool.Tool{
+		Name:        "memory_load",
+		Description: "Load a single memory's value from a bucket.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"bucket": {"type": "string", "description": "The bucket containing the memory"},
+				"key":    {"type": "string", "description": "The key of the memory to load"}
+			},
+			"required": ["bucket", "key"]
+		}`),
+		Func: memoryLoad,
+	})
+
+	tool.Register("memory_list", tool.Tool{
+		Name:        "memory_list",
+		Description: "List memories. Provide a bucket to list only that bucket; omit to list all memories across all buckets.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"bucket": {"type": "string", "description": "Optional bucket name. If omitted, lists all memories across all buckets."}
+			},
+			"required": []
+		}`),
+		Func: memoryList,
+	})
+
+	tool.Register("memory_delete_bucket", tool.Tool{
+		Name:        "memory_delete_bucket",
+		Description: "Delete a bucket and all memories in it.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"bucket": {"type": "string", "description": "The name of the bucket to delete"}
+			},
+			"required": ["bucket"]
+		}`),
+		Func: memoryDeleteBucket,
+	})
+
+	tool.Register("memory_list_buckets", tool.Tool{
+		Name:        "memory_list_buckets",
+		Description: "List all memory buckets with their memory counts.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {},
+			"required": []
+		}`),
+		Func: memoryListBuckets,
+	})
 }
 
-// memorySave creates or updates a memory in a bucket.
+// --- Tool implementations ---
+
 func memorySave(args map[string]string) (string, error) {
 	bucket, ok := args["bucket"]
 	if !ok || bucket == "" {
@@ -67,7 +168,6 @@ func memorySave(args map[string]string) (string, error) {
 	return fmt.Sprintf("Memory '%s' saved to bucket '%s'.", key, bucket), nil
 }
 
-// memoryEdit updates an existing memory in a bucket. Errors if not found.
 func memoryEdit(args map[string]string) (string, error) {
 	bucket, ok := args["bucket"]
 	if !ok || bucket == "" {
@@ -98,7 +198,6 @@ func memoryEdit(args map[string]string) (string, error) {
 	return fmt.Sprintf("Memory '%s' updated in bucket '%s'.", key, bucket), nil
 }
 
-// memoryDelete removes a single memory from a bucket.
 func memoryDelete(args map[string]string) (string, error) {
 	bucket, ok := args["bucket"]
 	if !ok || bucket == "" {
@@ -122,7 +221,6 @@ func memoryDelete(args map[string]string) (string, error) {
 	return fmt.Sprintf("Memory '%s' deleted from bucket '%s'.", key, bucket), nil
 }
 
-// memoryLoad reads a single memory from a bucket.
 func memoryLoad(args map[string]string) (string, error) {
 	bucket, ok := args["bucket"]
 	if !ok || bucket == "" {
@@ -147,8 +245,6 @@ func memoryLoad(args map[string]string) (string, error) {
 	return value, nil
 }
 
-// memoryList lists memories. If bucket is provided, lists only that bucket.
-// If bucket is omitted, lists all memories across all buckets.
 func memoryList(args map[string]string) (string, error) {
 	bucket := args["bucket"]
 
@@ -194,7 +290,6 @@ func memoryList(args map[string]string) (string, error) {
 	return fmt.Sprintf("All memories:\n%s", strings.Join(results, "\n")), nil
 }
 
-// memoryDeleteBucket deletes all memories in a bucket.
 func memoryDeleteBucket(args map[string]string) (string, error) {
 	bucket, ok := args["bucket"]
 	if !ok || bucket == "" {
@@ -210,7 +305,6 @@ func memoryDeleteBucket(args map[string]string) (string, error) {
 	return fmt.Sprintf("Bucket '%s' deleted (%d memories removed).", bucket, n), nil
 }
 
-// memoryListBuckets returns all bucket names with their memory counts.
 func memoryListBuckets(args map[string]string) (string, error) {
 	rows, err := db.Query("SELECT bucket, COUNT(*) FROM memories GROUP BY bucket ORDER BY bucket")
 	if err != nil {
