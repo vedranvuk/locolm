@@ -492,15 +492,17 @@ func searchEntities(search, lang string, limit int) (string, error) {
 // SPARQL mode
 // ---------------------------------------------------------------------------
 
-// normalizeSPARQL handles rare edge cases where SPARQL queries survive
-// JSON parsing but still contain literal backslash-n sequences (two chars:
-// backslash + n) instead of real newlines. This can happen when LLMs embed
-// SPARQL in non-JSON contexts or when the query is double-escaped at the
-// application layer.
+// normalizeSPARQL handles LLM escaping artifacts in SPARQL queries.
+// After JSON parsing, a query may contain literal backslash sequences that
+// the LLM intended as escape characters:
+//   - \\n (two chars: backslash + n) → real newline
+//   - \\t (two chars: backslash + t) → real tab
+//   - \\r (two chars: backslash + r) → real carriage return
+//   - \\\\ (two backslashes) → single literal backslash
 //
-// Note: The primary handling of LLM escaping artifacts (double-escaped
-// sequences like \\n) now happens in sanitizeRawJSON before JSON parsing.
-// This function is a safety net for remaining edge cases.
+// This is applied only to SPARQL queries (not filesystem paths or other
+// tool arguments) because SPARQL is the context where LLMs commonly emit
+// these artifacts and where the transformation is unambiguous.
 func normalizeSPARQL(query string) string {
 	// Only process if the query contains literal backslash sequences
 	if !strings.Contains(query, `\`) {
