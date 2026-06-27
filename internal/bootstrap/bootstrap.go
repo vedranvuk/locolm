@@ -1,6 +1,9 @@
 package bootstrap
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -38,6 +41,12 @@ func Bootstrap(llamaCmd, browserCmd string) {
 		log.Fatalf("[BOOTSTRAP] llama-server did not become ready in time")
 	}
 
+	log.Printf("[BOOTSTRAP] Waiting for model to be loaded...")
+	if !waitForModelReady(llamaURL, 120*time.Second) {
+		LlamaProcess.Kill()
+		log.Fatalf("[BOOTSTRAP] model did not become ready in time")
+	}
+
 	if browserCmd == "" {
 		log.Fatalf("[BOOTSTRAP] browser_command is required in locolm.json")
 	}
@@ -73,6 +82,43 @@ func waitForServer(url string, timeout time.Duration) bool {
 			return true
 		}
 		time.Sleep(500 * time.Millisecond)
+	}
+	return false
+}
+
+// waitForModelReady sends a minimal chat completion request and waits for a
+// successful response. This confirms the model is fully loaded and the
+// inference engine is ready, not just that the HTTP server is listening.
+func waitForModelReady(baseURL string, timeout time.Duration) bool {
+	probe := map[string]interface{}{
+		"model":    "unused",
+		"messages": []map[string]string{{"role": "user", "content": "hi"}},
+		"max_tokens": 1,
+		"stream":     false,
+	}
+	body, _ := json.Marshal(probe)
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		resp, err := http.Post(baseURL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+		if err == nil {
+			respBody, ioErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if ioErr == nil && resp.StatusCode == http.StatusOK {
+				// Verify the response is a valid chat completion, not an error.
+				var result struct {
+					Choices []struct {
+						Message struct {
+							Content string `json:"content"`
+						} `json:"message"`
+					} `json:"choices"`
+				}
+				if json.Unmarshal(respBody, &result) == nil && len(result.Choices) > 0 {
+					return true
+				}
+			}
+		}
+		time.Sleep(1 * time.Second)
 	}
 	return false
 }
