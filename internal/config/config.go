@@ -25,7 +25,7 @@ type Config struct {
 	WebFetch json.RawMessage `json:"web_fetch,omitempty"`
 	FS       json.RawMessage `json:"fs,omitempty"`
 	Exec     json.RawMessage `json:"exec,omitempty"`
-	Search   json.RawMessage `json:"search,omitempty"`
+	Wikidata json.RawMessage `json:"wikidata,omitempty"`
 }
 
 // LoadConfig reads locolm.json, applies GOOGLE_* env overrides, dispatches
@@ -60,7 +60,7 @@ func LoadConfig() Config {
 		"web_fetch": cfg.WebFetch,
 		"fs":       cfg.FS,
 		"exec":     cfg.Exec,
-		"search":   cfg.Search,
+		"wikidata":  cfg.Wikidata,
 	}
 	tool.LoadConfigs(rawConfigs)
 

@@ -22,6 +22,7 @@ type exaSearchRequest struct {
 	Contents        exaContents     `json:"contents"`
 	SystemPrompt    string          `json:"systemPrompt,omitempty"`
 	OutputSchema    json.RawMessage `json:"outputSchema,omitempty"`
+
 	IncludeDomains  []string        `json:"includeDomains,omitempty"`
 	ExcludeDomains  []string        `json:"excludeDomains,omitempty"`
 	StartPublished  string          `json:"startPublishedDate,omitempty"`

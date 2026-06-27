@@ -11,6 +11,6 @@ type ToolFunc func(args map[string]string) (string, error)
 type Tool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
-	InputSchema  json.RawMessage `json:"inputSchema"`
+	InputSchema json.RawMessage `json:"inputSchema"`
 	Func        ToolFunc        `json:"-"`
 }

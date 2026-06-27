@@ -32,6 +32,7 @@ Point your MCP client (or llama-server itself) at `http://127.0.0.1:11501`.
 
 | Tool | Description |
 |------|-------------|
+| `wikidata_query` | Query Wikidata for structured knowledge (entities, facts, SPARQL) |
 | `google_search` | Search the web via Google Custom Search |
 | `exa_search` | Search the web via Exa AI (neural search with highlights and synthesis) |
 | `web_fetch` | Fetch and read a web page (HTML, PDF, plain text) |
@@ -76,6 +77,13 @@ Configuration is via `locolm.json` in the working directory or exe directory:
     "allowed_commands": ["^git\\s", "^go\\s", "^python\\s", "^node\\s", "^npm\\s"],
     "timeout_sec": 30,
     "max_output_bytes": 102400
+  },
+  "wikidata": {
+    "endpoint": "https://www.wikidata.org/w/api.php",
+    "sparql_endpoint": "https://query.wikidata.org/sparql",
+    "user_agent": "locolm/1.0 (https://github.com/vedranvuk/locolm)",
+    "timeout_sec": 30,
+    "max_entities_per_request": 50
   }
 }
 ```

@@ -50,6 +50,10 @@ func searchGoogle(args map[string]string) (string, error) {
 		return "", fmt.Errorf("missing required argument: query")
 	}
 
+	if os.Getenv("GOOGLE_API_KEY") == "" || os.Getenv("GOOGLE_CSE_ID") == "" {
+		return "", fmt.Errorf("google_search requires GOOGLE_API_KEY and GOOGLE_CSE_ID environment variables to be set in locolm.json")
+	}
+
 	result, err := searchGoogleRaw(query)
 	if err != nil {
 		return "", err
