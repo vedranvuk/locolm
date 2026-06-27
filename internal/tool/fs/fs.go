@@ -231,8 +231,14 @@ func resolveAndValidate(inputPath string) (string, error) {
 			continue
 		}
 
-		// Check if absPath is within or equal to baseAbs
-		if absPath == baseAbs || strings.HasPrefix(absPath, baseAbs+string(os.PathSeparator)) {
+		// Check if absPath is within or equal to baseAbs.
+		// Use filepath.Rel to properly compute the relationship:
+		// if the relative path doesn't start with "..", it's inside.
+		if absPath == baseAbs {
+			return absPath, nil
+		}
+		rel, err := filepath.Rel(baseAbs, absPath)
+		if err == nil && !strings.HasPrefix(rel, "..") {
 			return absPath, nil
 		}
 	}
