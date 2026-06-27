@@ -1,0 +1,257 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"time"
+)
+
+// --- Exa Search types ---
+
+type exaSearchRequest struct {
+	Query           string          `json:"query"`
+	Type            string          `json:"type"`
+	NumResults      int             `json:"numResults"`
+	Contents        exaContents     `json:"contents"`
+	SystemPrompt    string          `json:"systemPrompt,omitempty"`
+	OutputSchema    json.RawMessage `json:"outputSchema,omitempty"`
+	IncludeDomains  []string        `json:"includeDomains,omitempty"`
+	ExcludeDomains  []string        `json:"excludeDomains,omitempty"`
+	StartPublished  string          `json:"startPublishedDate,omitempty"`
+	EndPublished    string          `json:"endPublishedDate,omitempty"`
+}
+
+type exaContents struct {
+	Highlights bool        `json:"highlights,omitempty"`
+	Text       *exaText    `json:"text,omitempty"`
+	Summary    interface{} `json:"summary,omitempty"` // bool or {query, schema}
+}
+
+type exaText struct {
+	MaxCharacters      int    `json:"maxCharacters,omitempty"`
+	Verbosity         string `json:"verbosity,omitempty"`
+	IncludeHTMLTags   bool   `json:"includeHtmlTags,omitempty"`
+}
+
+type exaSearchResponse struct {
+	RequestID  string       `json:"requestId"`
+	SearchType string       `json:"searchType"`
+	Results    []exaResult  `json:"results"`
+	Output     *exaOutput   `json:"output,omitempty"`
+	Cost       exaCost      `json:"costDollars"`
+}
+
+type exaResult struct {
+	Title         string    `json:"title"`
+	URL           string    `json:"url"`
+	ID            string    `json:"id"`
+	PublishedDate string    `json:"publishedDate"`
+	Author        string    `json:"author"`
+	Text          string    `json:"text"`
+	Highlights    []string  `json:"highlights"`
+	HighlightScores []float64 `json:"highlightScores"`
+	Summary       string    `json:"summary"`
+}
+
+type exaOutput struct {
+	Content   interface{}    `json:"content"`
+	Grounding []exaGrounding `json:"grounding"`
+}
+
+type exaGrounding struct {
+	Field      string       `json:"field"`
+	Citations  []exaCitation `json:"citations"`
+	Confidence string       `json:"confidence"`
+}
+
+type exaCitation struct {
+	URL   string `json:"url"`
+	Title string `json:"title"`
+}
+
+type exaCost struct {
+	Total float64 `json:"total"`
+}
+
+// --- Exa Search implementation ---
+
+func searchExa(args map[string]string) (string, error) {
+	query, ok := args["query"]
+	if !ok || query == "" {
+		return "", fmt.Errorf("missing required argument: query")
+	}
+
+	apiKey := os.Getenv("EXA_API_KEY")
+	if apiKey == "" {
+		return "", fmt.Errorf("EXA_API_KEY environment variable is not set")
+	}
+
+	// Build request
+	reqBody := exaSearchRequest{
+		Query:      query,
+		Type:       "auto",
+		NumResults: 10,
+		Contents:   exaContents{Highlights: true},
+	}
+
+	// Optional parameters
+	if v, ok := args["type"]; ok && v != "" {
+		reqBody.Type = v
+	}
+	if v, ok := args["num"]; ok && v != "" {
+		var n int
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 {
+			reqBody.NumResults = n
+		}
+	}
+	if v, ok := args["include_domains"]; ok && v != "" {
+		reqBody.IncludeDomains = splitAndTrim(v)
+	}
+	if v, ok := args["exclude_domains"]; ok && v != "" {
+		reqBody.ExcludeDomains = splitAndTrim(v)
+	}
+	if v, ok := args["start_date"]; ok && v != "" {
+		reqBody.StartPublished = v
+	}
+	if v, ok := args["end_date"]; ok && v != "" {
+		reqBody.EndPublished = v
+	}
+	if v, ok := args["system_prompt"]; ok && v != "" {
+		reqBody.SystemPrompt = v
+	}
+	if v, ok := args["output_schema"]; ok && v != "" {
+		var schema json.RawMessage
+		if err := json.Unmarshal([]byte(v), &schema); err != nil {
+			return "", fmt.Errorf("invalid output_schema JSON: %w", err)
+		}
+		reqBody.OutputSchema = schema
+	}
+
+	// Marshal request
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal Exa request: %w", err)
+	}
+
+	log.Printf("[EXA] Query: %q (type=%s, num=%d)", query, reqBody.Type, reqBody.NumResults)
+
+	// Make HTTP request
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequest("POST", "https://api.exa.ai/search", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create Exa request: %w", err)
+	}
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("Exa API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	log.Printf("[EXA] Exa responded with status %d", resp.StatusCode)
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("Exa API returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read Exa response: %w", err)
+	}
+
+	var searchResp exaSearchResponse
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		return "", fmt.Errorf("failed to unmarshal Exa response: %w", err)
+	}
+
+	log.Printf("[EXA] Found %d results (cost: $%.4f)", len(searchResp.Results), searchResp.Cost.Total)
+
+	// Format results
+	var results []string
+	for i, r := range searchResp.Results {
+		entry := fmt.Sprintf("%d. %s\n   URL: %s", i+1, r.Title, r.URL)
+		if r.Author != "" {
+			entry += fmt.Sprintf("\n   Author: %s", r.Author)
+		}
+		if r.PublishedDate != "" {
+			entry += fmt.Sprintf("\n   Date: %s", r.PublishedDate)
+		}
+		if r.Summary != "" {
+			entry += fmt.Sprintf("\n   Summary: %s", r.Summary)
+		}
+		if len(r.Highlights) > 0 {
+			for _, h := range r.Highlights {
+				entry += fmt.Sprintf("\n   > %s", h)
+			}
+		}
+		results = append(results, entry)
+	}
+
+	output := fmt.Sprintf("Found %d results (cost: $%.4f):\n\n%s", len(searchResp.Results), searchResp.Cost.Total, joinStrings(results, "\n\n"))
+
+	// Include synthesized output if present
+	if searchResp.Output != nil && searchResp.Output.Content != nil {
+		contentBytes, err := json.MarshalIndent(searchResp.Output.Content, "", "  ")
+		if err == nil {
+			output += fmt.Sprintf("\n\n[Synthesized Output]\n%s", string(contentBytes))
+		}
+	}
+
+	return output, nil
+}
+
+// splitAndTrim splits a comma-separated string and trims whitespace
+func splitAndTrim(s string) []string {
+	var result []string
+	for _, part := range splitString(s, ",") {
+		trimmed := trimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+func splitString(s, sep string) []string {
+	var result []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == sep[0] {
+			result = append(result, s[start:i])
+			start = i + 1
+		}
+	}
+	result = append(result, s[start:])
+	return result
+}
+
+func trimSpace(s string) string {
+	start := 0
+	end := len(s)
+	for start < end && (s[start] == ' ' || s[start] == '\t') {
+		start++
+	}
+	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
+		end--
+	}
+	return s[start:end]
+}
+
+func joinStrings(strs []string, sep string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	result := strs[0]
+	for i := 1; i < len(strs); i++ {
+		result += sep + strs[i]
+	}
+	return result
+}

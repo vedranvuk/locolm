@@ -20,6 +20,9 @@ var toolRegistry = map[string]ToolFunc{
 	"memory_list":        memoryList,
 	"memory_delete_bucket": memoryDeleteBucket,
 	"memory_list_buckets": memoryListBuckets,
+	"fs_run":             runCommand,
+	"exa_search":         searchExa,
+	"sys_info":          SysInfo,
 }
 
 // --- Tool definitions ---
@@ -172,6 +175,79 @@ var toolDefinitions = []Tool{
 			"type": "object",
 			"properties": {},
 			"required": []
+		}`),
+	},
+	{
+		Name:        "fs_run",
+		Description: "Execute a command and capture its output. Runs via cmd /C on Windows.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"command": {
+					"type": "string",
+					"description": "The command to execute (e.g. 'dir', 'git status', 'python script.py')"
+				},
+				"timeout": {
+					"type": "string",
+					"description": "Optional timeout in seconds (default 30)"
+				}
+			},
+			"required": ["command"]
+		}`),
+	},
+	{
+		Name:        "sys_info",
+		Description: "Get current system information: date, time, timezone, OS, architecture, hostname, working directory, user, Go version, and uptime. Call this at the start of every conversation to orient yourself.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {},
+			"required": []
+		}`),
+	},
+	{
+		Name:        "exa_search",
+		Description: "Search the web using Exa AI (neural search with highlights and synthesized answers). Requires EXA_API_KEY env var.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"query": {
+					"type": "string",
+					"description": "The search query"
+				},
+				"type": {
+					"type": "string",
+					"description": "Search type: auto (default), fast, instant, deep, deep-lite, deep-reasoning"
+				},
+				"num": {
+					"type": "string",
+					"description": "Number of results (default 10)"
+				},
+				"include_domains": {
+					"type": "string",
+					"description": "Comma-separated list of domains to restrict search to (e.g. 'github.com,stackoverflow.com')"
+				},
+				"exclude_domains": {
+					"type": "string",
+					"description": "Comma-separated list of domains to exclude from results"
+				},
+				"start_date": {
+					"type": "string",
+					"description": "Start date filter (e.g. '2025-01-01' or '2025-01-01T00:00:00Z')"
+				},
+				"end_date": {
+					"type": "string",
+					"description": "End date filter (e.g. '2025-12-31' or '2025-12-31T23:59:59Z')"
+				},
+				"system_prompt": {
+					"type": "string",
+					"description": "System prompt to guide synthesis behavior (used with output_schema)"
+				},
+				"output_schema": {
+					"type": "string",
+					"description": "JSON Schema string for structured output (triggers synthesis)"
+				}
+			},
+			"required": ["query"]
 		}`),
 	},
 }

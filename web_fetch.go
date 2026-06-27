@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-shiori/go-readability"
+	"codeberg.org/readeck/go-readability/v2"
 	pdf "github.com/ledongthuc/pdf"
 )
 
@@ -278,13 +278,15 @@ func extractTextHTML(body []byte, pageURL *url.URL) (string, error) {
 		return "", fmt.Errorf("failed to parse page content: %w", err)
 	}
 	var sb strings.Builder
-	if article.Title != "" {
-		sb.WriteString(fmt.Sprintf("# %s\n\n", article.Title))
+	if title := article.Title(); title != "" {
+		sb.WriteString(fmt.Sprintf("# %s\n\n", title))
 	}
-	if article.Byline != "" {
-		sb.WriteString(fmt.Sprintf("By: %s\n\n", article.Byline))
+	if byline := article.Byline(); byline != "" {
+		sb.WriteString(fmt.Sprintf("By: %s\n\n", byline))
 	}
-	sb.WriteString(article.TextContent)
+	if err := article.RenderText(&sb); err != nil {
+		return "", fmt.Errorf("failed to render article text: %w", err)
+	}
 	return sb.String(), nil
 }
 
