@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/vedranvuk/locolm/internal/tool"
+	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
 // ---------------------------------------------------------------------------
@@ -34,31 +34,11 @@ var execCfg = ExecConfig{
 var execAllowedPatterns []*regexp.Regexp
 
 func init() {
-	// Register config loader
-	tool.RegisterConfig("exec", func(raw json.RawMessage) error {
-		if len(raw) == 0 {
-			return nil
-		}
-		if err := json.Unmarshal(raw, &execCfg); err != nil {
-			return err
-		}
-		// Compile allowed command patterns
-		execAllowedPatterns = nil
-		for _, pattern := range execCfg.AllowedCommands {
-			re, err := regexp.Compile(pattern)
-			if err != nil {
-				return fmt.Errorf("invalid allowed_commands regex %q: %w", pattern, err)
-			}
-			execAllowedPatterns = append(execAllowedPatterns, re)
-		}
-		return nil
-	})
-
 	// Register tool
-	tool.Register("fs_run", tool.Tool{
-		Name:        "fs_run",
-		Description: "Execute a command and capture its output. Runs via cmd /C on Windows. Commands may be restricted by the allowed_commands config.",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"fs_run",
+		"Execute a command and capture its output. Runs via cmd /C on Windows. Commands may be restricted by the allowed_commands config.",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"command": {
@@ -72,8 +52,8 @@ func init() {
 			},
 			"required": ["command"]
 		}`),
-		Func: runCommand,
-	})
+		runCommand,
+	)
 }
 
 // ---------------------------------------------------------------------------

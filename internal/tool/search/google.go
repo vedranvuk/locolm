@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/vedranvuk/locolm/internal/tool"
+	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
 // --- Google Custom Search types ---
@@ -25,10 +25,10 @@ type SearchResponse struct {
 }
 
 func init() {
-	tool.Register("google_search", tool.Tool{
-		Name:        "google_search",
-		Description: "Search the web using Google Custom Search",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"google_search",
+		"Search the web using Google Custom Search",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"query": {
@@ -38,8 +38,8 @@ func init() {
 			},
 			"required": ["query"]
 		}`),
-		Func: searchGoogle,
-	})
+		searchGoogle,
+	)
 }
 
 // --- Google Search implementation ---

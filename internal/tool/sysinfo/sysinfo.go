@@ -7,23 +7,23 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/vedranvuk/locolm/internal/tool"
+	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
 // startTime is set by main.go when the process starts.
 var startTime = time.Now()
 
 func init() {
-	tool.Register("sys_info", tool.Tool{
-		Name:        "sys_info",
-		Description: "Get current system information: date, time, timezone, OS, architecture, hostname, working directory, user, Go version, and uptime. Call this at the start of every conversation to orient yourself.",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"sys_info",
+		"Get current system information: date, time, timezone, OS, architecture, hostname, working directory, user, Go version, and uptime. Call this at the start of every conversation to orient yourself.",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {},
 			"required": []
 		}`),
-		Func: sysInfoTool,
-	})
+		sysInfoTool,
+	)
 }
 
 func sysInfoTool(args map[string]string) (string, error) {

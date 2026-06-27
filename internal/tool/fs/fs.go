@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vedranvuk/locolm/internal/tool"
+	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
 // ---------------------------------------------------------------------------
@@ -41,20 +41,11 @@ var fsCfg = FSConfig{
 }
 
 func init() {
-	// Register config loader — called by tool.LoadConfigs after LoadConfig
-	// unmarshals the "fs" key from locolm.json.
-	tool.RegisterConfig("fs", func(raw json.RawMessage) error {
-		if len(raw) == 0 {
-			return nil
-		}
-		return json.Unmarshal(raw, &fsCfg)
-	})
-
 	// Register tools
-	tool.Register("fs_list", tool.Tool{
-		Name:        "fs_list",
-		Description: "List directory contents. Returns name, size, type, and modification time for each entry.",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"fs_list",
+		"List directory contents. Returns name, size, type, and modification time for each entry.",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"path": {
@@ -73,13 +64,13 @@ func init() {
 				}
 			}
 		}`),
-		Func: fsList,
-	})
+		fsList,
+	)
 
-	tool.Register("fs_read", tool.Tool{
-		Name:        "fs_read",
-		Description: "Read a text file's content. File must be within an allowed path and under the read size limit.",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"fs_read",
+		"Read a text file's content. File must be within an allowed path and under the read size limit.",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"path": {
@@ -97,13 +88,13 @@ func init() {
 			},
 			"required": ["path"]
 		}`),
-		Func: fsRead,
-	})
+		fsRead,
+	)
 
-	tool.Register("fs_write", tool.Tool{
-		Name:        "fs_write",
-		Description: "Create or overwrite a file with text content. File must be within an allowed path.",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"fs_write",
+		"Create or overwrite a file with text content. File must be within an allowed path.",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"path": {
@@ -117,13 +108,13 @@ func init() {
 			},
 			"required": ["path", "content"]
 		}`),
-		Func: fsWrite,
-	})
+		fsWrite,
+	)
 
-	tool.Register("fs_delete", tool.Tool{
-		Name:        "fs_delete",
-		Description: "Delete a single file. The file must be within an allowed path. Cannot delete directories.",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"fs_delete",
+		"Delete a single file. The file must be within an allowed path. Cannot delete directories.",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"path": {
@@ -133,13 +124,13 @@ func init() {
 			},
 			"required": ["path"]
 		}`),
-		Func: fsDelete,
-	})
+		fsDelete,
+	)
 
-	tool.Register("fs_find", tool.Tool{
-		Name:        "fs_find",
-		Description: "Find files by name pattern (glob). Returns matching file paths.",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"fs_find",
+		"Find files by name pattern (glob). Returns matching file paths.",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"pattern": {
@@ -157,13 +148,13 @@ func init() {
 			},
 			"required": ["pattern"]
 		}`),
-		Func: fsFind,
-	})
+		fsFind,
+	)
 
-	tool.Register("fs_tree", tool.Tool{
-		Name:        "fs_tree",
-		Description: "Display a directory tree structure as indented text. Depth-limited for safety.",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"fs_tree",
+		"Display a directory tree structure as indented text. Depth-limited for safety.",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"path": {
@@ -180,8 +171,8 @@ func init() {
 				}
 			}
 		}`),
-		Func: fsTree,
-	})
+		fsTree,
+	)
 }
 
 // ---------------------------------------------------------------------------

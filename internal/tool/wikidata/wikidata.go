@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vedranvuk/locolm/internal/tool"
+	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
 // ---------------------------------------------------------------------------
@@ -37,10 +37,10 @@ var wikidataCfg = wikidataConfig{
 }
 
 func init() {
-	tool.Register("wikidata_query", tool.Tool{
-		Name:        "wikidata_query",
-		Description: "Query Wikidata for structured knowledge about entities, people, places, concepts, and more. Supports three modes: 'entity' (fetch by Q-ID like Q42), 'search' (text search for entities), and 'sparql' (run a SPARQL query for complex data retrieval).",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"wikidata_query",
+		"Query Wikidata for structured knowledge about entities, people, places, concepts, and more. Supports three modes: 'entity' (fetch by Q-ID like Q42), 'search' (text search for entities), and 'sparql' (run a SPARQL query for complex data retrieval).",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"mode":  {"type": "string", "description": "Query mode: 'entity' (fetch by Q-ID), 'search' (text search), or 'sparql' (SPARQL query)"},
@@ -50,15 +50,8 @@ func init() {
 			},
 			"required": ["mode", "query"]
 		}`),
-		Func: wikidataQuery,
-	})
-
-	tool.RegisterConfig("wikidata", func(raw json.RawMessage) error {
-		if len(raw) == 0 {
-			return nil // keep defaults
-		}
-		return json.Unmarshal(raw, &wikidataCfg)
-	})
+		wikidataQuery,
+	)
 }
 
 // ---------------------------------------------------------------------------

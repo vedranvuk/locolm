@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"codeberg.org/readeck/go-readability/v2"
-	"github.com/vedranvuk/locolm/internal/tool"
+	"github.com/vedranvuk/locolm/internal/mcp"
 	pdf "github.com/ledongthuc/pdf"
 )
 
@@ -37,27 +37,21 @@ var webFetchCfg = WebFetchConfig{
 }
 
 func init() {
-	// Register config loader
-	tool.RegisterConfig("web_fetch", func(raw json.RawMessage) error {
-		if len(raw) == 0 {
-			return nil
-		}
-		// Unmarshal from JSON-friendly field names
-		var c struct {
-			MaxBytes     int64 `json:"max_bytes"`
-			MaxTextBytes int64 `json:"max_text_bytes"`
-			TimeoutSec   int   `json:"timeout_sec"`
-		}
-		if err := json.Unmarshal(raw, &c); err != nil {
-			return err
-		}
-		webFetchCfg = WebFetchConfig{
-			MaxBytes:     c.MaxBytes,
-			MaxTextBytes: c.MaxTextBytes,
-			Timeout:      time.Duration(c.TimeoutSec) * time.Second,
-		}
-		return nil
-	})
+	mcp.RegisterTool(
+		"web_fetch",
+		"Fetch and read the content of a web page",
+		json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"url": {
+					"type": "string",
+					"description": "The URL of the web page to fetch"
+				}
+			},
+			"required": ["url"]
+		}`),
+		webFetch,
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -100,24 +94,6 @@ var blockedTypes = []string{
 	"image/",
 	"audio/",
 	"video/",
-}
-
-func init() {
-	tool.Register("web_fetch", tool.Tool{
-		Name:        "web_fetch",
-		Description: "Fetch and read the content of a web page",
-		InputSchema: json.RawMessage(`{
-			"type": "object",
-			"properties": {
-				"url": {
-					"type": "string",
-					"description": "The URL of the web page to fetch"
-				}
-			},
-			"required": ["url"]
-		}`),
-		Func: webFetch,
-	})
 }
 
 // ---------------------------------------------------------------------------

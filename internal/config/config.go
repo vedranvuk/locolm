@@ -4,15 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-
-	"github.com/vedranvuk/locolm/internal/tool"
 )
 
 // Config holds all locolm configuration. Loaded from locolm.json with
 // GOOGLE_* / EXA_* env overrides for third-party credentials.
-//
-// Tool-specific configs are stored as raw JSON and dispatched to each tool
-// package's registered config loader via tool.LoadConfigs().
 type Config struct {
 	MCPPort            string `json:"mcp_port"`
 	LlamaServerCommand string `json:"llama_server_command"`
@@ -54,15 +49,6 @@ func LoadConfig() Config {
 	if v := os.Getenv("GOOGLE_CSE_ID"); v != "" {
 		cfg.GoogleCSEID = v
 	}
-
-	// Dispatch raw tool configs to registered loaders
-	rawConfigs := map[string]json.RawMessage{
-		"web_fetch": cfg.WebFetch,
-		"fs":       cfg.FS,
-		"exec":     cfg.Exec,
-		"wikidata":  cfg.Wikidata,
-	}
-	tool.LoadConfigs(rawConfigs)
 
 	return cfg
 }

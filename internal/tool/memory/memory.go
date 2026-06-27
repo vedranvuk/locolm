@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vedranvuk/locolm/internal/tool"
+	"github.com/vedranvuk/locolm/internal/mcp"
 	_ "modernc.org/sqlite"
 )
 
@@ -41,10 +41,10 @@ func init() {
 	}
 
 	// Register all memory tools.
-	tool.Register("memory_save", tool.Tool{
-		Name:        "memory_save",
-		Description: "Create or update a memory in a bucket. Use this to remember something for future conversations.",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"memory_save",
+		"Create or update a memory in a bucket. Use this to remember something for future conversations.",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"bucket":  {"type": "string", "description": "The bucket (category) to store the memory in (e.g. 'user', 'work', 'general')"},
@@ -54,13 +54,13 @@ func init() {
 			},
 			"required": ["bucket", "key", "value"]
 		}`),
-		Func: memorySave,
-	})
+		memorySave,
+	)
 
-	tool.Register("memory_edit", tool.Tool{
-		Name:        "memory_edit",
-		Description: "Update an existing memory's value in a bucket. Fails if the memory doesn't exist.",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"memory_edit",
+		"Update an existing memory's value in a bucket. Fails if the memory doesn't exist.",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"bucket": {"type": "string", "description": "The bucket containing the memory"},
@@ -69,13 +69,13 @@ func init() {
 			},
 			"required": ["bucket", "key", "value"]
 		}`),
-		Func: memoryEdit,
-	})
+		memoryEdit,
+	)
 
-	tool.Register("memory_delete", tool.Tool{
-		Name:        "memory_delete",
-		Description: "Delete a specific memory from a bucket.",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"memory_delete",
+		"Delete a specific memory from a bucket.",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"bucket": {"type": "string", "description": "The bucket containing the memory"},
@@ -83,13 +83,13 @@ func init() {
 			},
 			"required": ["bucket", "key"]
 		}`),
-		Func: memoryDelete,
-	})
+		memoryDelete,
+	)
 
-	tool.Register("memory_load", tool.Tool{
-		Name:        "memory_load",
-		Description: "Load a single memory's value from a bucket.",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"memory_load",
+		"Load a single memory's value from a bucket.",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"bucket": {"type": "string", "description": "The bucket containing the memory"},
@@ -97,45 +97,45 @@ func init() {
 			},
 			"required": ["bucket", "key"]
 		}`),
-		Func: memoryLoad,
-	})
+		memoryLoad,
+	)
 
-	tool.Register("memory_list", tool.Tool{
-		Name:        "memory_list",
-		Description: "List memories. Provide a bucket to list only that bucket; omit to list all memories across all buckets.",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"memory_list",
+		"List memories. Provide a bucket to list only that bucket; omit to list all memories across all buckets.",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"bucket": {"type": "string", "description": "Optional bucket name. If omitted, lists all memories across all buckets."}
 			},
 			"required": []
 		}`),
-		Func: memoryList,
-	})
+		memoryList,
+	)
 
-	tool.Register("memory_delete_bucket", tool.Tool{
-		Name:        "memory_delete_bucket",
-		Description: "Delete a bucket and all memories in it.",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"memory_delete_bucket",
+		"Delete a bucket and all memories in it.",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"bucket": {"type": "string", "description": "The name of the bucket to delete"}
 			},
 			"required": ["bucket"]
 		}`),
-		Func: memoryDeleteBucket,
-	})
+		memoryDeleteBucket,
+	)
 
-	tool.Register("memory_list_buckets", tool.Tool{
-		Name:        "memory_list_buckets",
-		Description: "List all memory buckets with their memory counts.",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"memory_list_buckets",
+		"List all memory buckets with their memory counts.",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {},
 			"required": []
 		}`),
-		Func: memoryListBuckets,
-	})
+		memoryListBuckets,
+	)
 }
 
 // --- Tool implementations ---

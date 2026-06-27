@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/vedranvuk/locolm/internal/tool"
+	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
 // --- Exa Search types ---
@@ -82,10 +82,10 @@ type exaCost struct {
 }
 
 func init() {
-	tool.Register("exa_search", tool.Tool{
-		Name:        "exa_search",
-		Description: "Search the web using Exa AI (neural search with highlights and synthesized answers). Requires EXA_API_KEY env var.",
-		InputSchema: json.RawMessage(`{
+	mcp.RegisterTool(
+		"exa_search",
+		"Search the web using Exa AI (neural search with highlights and synthesized answers). Requires EXA_API_KEY env var.",
+		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"query":             {"type": "string", "description": "The search query"},
@@ -100,8 +100,8 @@ func init() {
 			},
 			"required": ["query"]
 		}`),
-		Func: searchExa,
-	})
+		searchExa,
+	)
 }
 
 // --- Exa Search implementation ---
