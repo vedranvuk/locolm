@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -179,9 +180,21 @@ func init() {
 // Sandbox
 // ---------------------------------------------------------------------------
 
+// LoadFSConfig unmarshals the fs JSON config into fsCfg.
+// Call this from main after LoadConfig.
+func LoadFSConfig(raw json.RawMessage) {
+	if len(raw) == 0 {
+		return
+	}
+	json.Unmarshal(raw, &fsCfg)
+	log.Printf("[FS] Config loaded: allowed_paths=%v, read_max=%d, write_max=%d, find_max=%d, tree_depth=%d",
+		fsCfg.AllowedPaths, fsCfg.ReadMaxBytes, fsCfg.WriteMaxBytes, fsCfg.FindMaxResults, fsCfg.TreeMaxDepth)
+}
+
 // resolveAndValidate resolves a path (expanding "~" to home) and verifies
 // it falls within one of the configured allowed base directories.
 // Returns the cleaned absolute path or an error.
+// Resolves symlinks to prevent sandbox escape.
 func resolveAndValidate(inputPath string) (string, error) {
 	if inputPath == "" {
 		inputPath = "."
@@ -200,6 +213,14 @@ func resolveAndValidate(inputPath string) (string, error) {
 	absPath, err := filepath.Abs(inputPath)
 	if err != nil {
 		return "", fmt.Errorf("invalid path %q: %w", inputPath, err)
+	}
+
+	// Resolve symlinks to get the real path
+	realPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		// If the path doesn't exist (e.g. fs_write creating a new file),
+		// use the absolute path as-is for validation
+		realPath = absPath
 	}
 
 	// Check against each allowed base
@@ -222,15 +243,19 @@ func resolveAndValidate(inputPath string) (string, error) {
 			continue
 		}
 
-		// Check if absPath is within or equal to baseAbs.
-		// Use filepath.Rel to properly compute the relationship:
-		// if the relative path doesn't start with "..", it's inside.
-		if absPath == baseAbs {
-			return absPath, nil
+		// Resolve symlinks in base as well
+		baseReal, err := filepath.EvalSymlinks(baseAbs)
+		if err != nil {
+			baseReal = baseAbs
 		}
-		rel, err := filepath.Rel(baseAbs, absPath)
+
+		// Check if realPath is within or equal to baseReal.
+		if realPath == baseReal {
+			return realPath, nil
+		}
+		rel, err := filepath.Rel(baseReal, realPath)
 		if err == nil && !strings.HasPrefix(rel, "..") {
-			return absPath, nil
+			return realPath, nil
 		}
 	}
 
@@ -263,6 +288,8 @@ func fsList(args map[string]string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to read directory %q: %w", resolved, err)
 	}
+
+	log.Printf("[FS] Listing %s (%d entries)", resolved, len(entries))
 
 	var results []listEntry
 	for _, entry := range entries {
@@ -346,16 +373,26 @@ func fsRead(args map[string]string) (string, error) {
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
 
+	log.Printf("[FS] Read %d bytes from %s", len(data), resolved)
+
 	content := string(data)
 
 	// Apply offset/limit
 	offset := 1
 	if v := args["offset"]; v != "" {
-		fmt.Sscanf(v, "%d", &offset)
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return "", fmt.Errorf("invalid offset %q: must be a positive integer", v)
+		}
+		offset = n
 	}
 	limit := 500
 	if v := args["limit"]; v != "" {
-		fmt.Sscanf(v, "%d", &limit)
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return "", fmt.Errorf("invalid limit %q: must be a positive integer", v)
+		}
+		limit = n
 	}
 
 	lines := strings.Split(content, "\n")
@@ -363,7 +400,7 @@ func fsRead(args map[string]string) (string, error) {
 		return "", nil
 	}
 	end := offset + limit
-	if end > len(lines) || limit <= 0 {
+	if end > len(lines) {
 		end = len(lines)
 	}
 
@@ -389,6 +426,12 @@ func fsWrite(args map[string]string) (string, error) {
 	resolved, err := resolveAndValidate(filePath)
 	if err != nil {
 		return "", err
+	}
+
+	// Verify parent directory exists
+	parentDir := filepath.Dir(resolved)
+	if _, err := os.Stat(parentDir); err != nil {
+		return "", fmt.Errorf("parent directory does not exist: %q", parentDir)
 	}
 
 	if err := os.WriteFile(resolved, []byte(content), 0644); err != nil {
@@ -452,8 +495,14 @@ func fsFind(args map[string]string) (string, error) {
 
 	maxResults := fsCfg.FindMaxResults
 	if v := args["max_results"]; v != "" {
-		fmt.Sscanf(v, "%d", &maxResults)
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return "", fmt.Errorf("invalid max_results %q: must be a positive integer", v)
+		}
+		maxResults = n
 	}
+
+	log.Printf("[FS] Finding %q in %s (max %d)", pattern, resolved, maxResults)
 
 	var results []string
 
@@ -462,12 +511,43 @@ func fsFind(args map[string]string) (string, error) {
 			return nil // skip inaccessible entries
 		}
 
+		// Resolve symlinks to prevent sandbox escape
+		realPath := path
+		if rp, evalErr := filepath.EvalSymlinks(path); evalErr == nil {
+			realPath = rp
+		}
+
+		// Check that the real path is still within allowed directories
+		valid := false
+		for _, base := range fsCfg.AllowedPaths {
+			if base == "" {
+				continue
+			}
+			baseAbs, _ := filepath.Abs(base)
+			baseReal, evalErr := filepath.EvalSymlinks(baseAbs)
+			if evalErr != nil {
+				baseReal = baseAbs
+			}
+			if realPath == baseReal {
+				valid = true
+				break
+			}
+			rel, relErr := filepath.Rel(baseReal, realPath)
+			if relErr == nil && !strings.HasPrefix(rel, "..") {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return nil
+		}
+
 		// Match against the pattern using the file's base name
 		matched, matchErr := filepath.Match(pattern, d.Name())
 		if matchErr != nil {
 			return nil
 		}
-		// Also try matching against relative path for patterns like "**/*.go"
+		// Also try matching against relative path for patterns like "src/*.ts"
 		if !matched {
 			rel, relErr := filepath.Rel(resolved, path)
 			if relErr == nil {
@@ -476,7 +556,8 @@ func fsFind(args map[string]string) (string, error) {
 		}
 
 		if matched {
-			results = append(results, path)
+			rel, _ := filepath.Rel(resolved, path)
+			results = append(results, rel)
 			if len(results) >= maxResults {
 				return filepath.SkipAll
 			}
@@ -489,6 +570,7 @@ func fsFind(args map[string]string) (string, error) {
 		return "", fmt.Errorf("search failed: %w", err)
 	}
 
+	log.Printf("[FS] Found %d results for %q in %s", len(results), pattern, resolved)
 	b, _ := json.MarshalIndent(results, "", "  ")
 	return string(b), nil
 }
@@ -510,7 +592,11 @@ func fsTree(args map[string]string) (string, error) {
 
 	maxDepth := fsCfg.TreeMaxDepth
 	if v := args["depth"]; v != "" {
-		fmt.Sscanf(v, "%d", &maxDepth)
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return "", fmt.Errorf("invalid depth %q: must be a positive integer", v)
+		}
+		maxDepth = n
 	}
 
 	excludeSet := map[string]bool{}
@@ -520,16 +606,20 @@ func fsTree(args map[string]string) (string, error) {
 		}
 	}
 
+	log.Printf("[FS] Tree of %s (depth %d, exclude %v)", resolved, maxDepth, excludeSet)
+
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%s\n", resolved)
 
-	buildTree(&sb, resolved, "", 0, maxDepth, excludeSet)
+	treeMaxEntries := fsCfg.FindMaxResults // reuse find limit as tree entry cap
+	buildTree(&sb, resolved, "", 0, maxDepth, excludeSet, &treeMaxEntries)
 
+	log.Printf("[FS] Tree output: %d lines", strings.Count(sb.String(), "\n"))
 	return sb.String(), nil
 }
 
-func buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, maxDepth int, excludeSet map[string]bool) {
-	if depth >= maxDepth {
+func buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, maxDepth int, excludeSet map[string]bool, remaining *int) {
+	if depth >= maxDepth || *remaining <= 0 {
 		return
 	}
 
@@ -549,6 +639,9 @@ func buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, ma
 	})
 
 	for i, entry := range entries {
+		if *remaining <= 0 {
+			return
+		}
 		if excludeSet[entry.Name()] {
 			continue
 		}
@@ -560,13 +653,14 @@ func buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, ma
 		}
 
 		fmt.Fprintf(sb, "%s%s%s\n", prefix, connector, entry.Name())
+		*remaining--
 
 		if entry.IsDir() {
 			extension := "│   "
 			if isLast {
 				extension = "    "
 			}
-			buildTree(sb, filepath.Join(dirPath, entry.Name()), prefix+extension, depth+1, maxDepth, excludeSet)
+			buildTree(sb, filepath.Join(dirPath, entry.Name()), prefix+extension, depth+1, maxDepth, excludeSet, remaining)
 		}
 	}
 }

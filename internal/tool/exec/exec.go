@@ -3,6 +3,7 @@ package exec
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os/exec"
 	"regexp"
 	"time"
@@ -54,6 +55,26 @@ func init() {
 		}`),
 		runCommand,
 	)
+}
+
+// LoadExecConfig unmarshals the exec JSON config into execCfg and compiles regex patterns.
+// Call this from main after LoadConfig.
+func LoadExecConfig(raw json.RawMessage) {
+	if len(raw) == 0 {
+		return
+	}
+	json.Unmarshal(raw, &execCfg)
+	execAllowedPatterns = nil
+	for _, pattern := range execCfg.AllowedCommands {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			log.Printf("[EXEC] Warning: invalid allowed_commands regex %q: %v", pattern, err)
+			continue
+		}
+		execAllowedPatterns = append(execAllowedPatterns, re)
+	}
+	log.Printf("[EXEC] Config loaded: timeout=%d, max_output=%d, allowed_patterns=%d",
+		execCfg.TimeoutSec, execCfg.MaxOutputBytes, len(execAllowedPatterns))
 }
 
 // ---------------------------------------------------------------------------
