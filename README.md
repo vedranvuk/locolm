@@ -1,16 +1,16 @@
 # locolm
 
-A vibe-coded local AI platform that gets anyone up and running with a local LLM in seconds. No fiddling with config files, no manual setup — just run one executable and everything bootstraps for you.
+A local MCP (Model Context Protocol) server that gives your LLM access to tools for web search, web fetching, filesystem operations, persistent memory, and more. locolm runs as a standalone MCP server — connect any MCP client to it.
 
 ## What it does
 
-locolm ties together everything you need for a local AI experience:
+locolm provides an MCP server that exposes tools for:
 
-- **llama-server** — automatically starts the LLM engine with your chosen model
-- **Chrome app** — opens llama-server as a standalone windowed app in your browser
-- **MCP server** — gives the LLM access to tools so it can search the web, read pages, work with files, and remember things across conversations
+- **Web & Research** — web search (Google, Exa), web fetching, Wikidata queries
 - **Filesystem** — sandboxed file read/write/delete/find so the LLM can work with your local files
-- **Memory** — SQLite-backed persistent memory so the LLM recalls context between sessions
+- **Command execution** — run CLI commands with allowlist security
+- **Memory** — SQLite-backed persistent memory so the LLM recalls context across conversations
+- **System info** — date, OS, arch, hostname, uptime
 
 ## Quick start
 
@@ -19,14 +19,7 @@ go build -o locolm.exe ./cmd/locolm/
 ./locolm.exe
 ```
 
-That's it. locolm will:
-
-1. Start the MCP server on port 11501
-2. Start llama-server with your configured model
-3. Wait for llama-server to become ready
-4. Open Chrome as a standalone app pointed at llama-server
-
-Point your MCP client (or llama-server itself) at `http://127.0.0.1:11501`.
+The MCP server listens on `http://127.0.0.1:11501`. Point your MCP client at it.
 
 ## Tools
 
@@ -59,12 +52,11 @@ Configuration is via `locolm.json` in the working directory or exe directory:
 ```json
 {
   "mcp_port": "11501",
-  "llama_server_command": "llama-server -m model.gguf",
-  "browser_command": "chrome.exe",
   "web_fetch": {
     "max_bytes": 5242880,
     "max_text_bytes": 204800,
-    "timeout_sec": 30
+    "timeout_sec": 30,
+    "proxy_url": "socks5://localhost:9050"
   },
   "fs": {
     "allowed_paths": [".", "~"],
@@ -95,6 +87,14 @@ Third-party API keys are set via environment variables:
 | `GOOGLE_API_KEY` | Google Search API key |
 | `GOOGLE_CSE_ID` | Google Custom Search Engine ID |
 | `EXA_API_KEY` | Exa AI search API key |
+
+## Proxy configuration
+
+The `web_fetch` tool supports a SOCKS5 proxy via the `proxy_url` setting. This is useful for routing traffic through Tor or other proxy services.
+
+- If `proxy_url` is set, all web_fetch requests go through the proxy
+- If `proxy_url` is empty or omitted, web_fetch connects directly
+- Default: `socks5://localhost:9050` (Tor default)
 
 ## Data files
 

@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"codeberg.org/readeck/go-readability/v2"
 	"github.com/vedranvuk/locolm/internal/mcp"
 	pdf "github.com/ledongthuc/pdf"
+	"golang.org/x/net/proxy"
 )
 
 // ---------------------------------------------------------------------------
@@ -27,6 +29,7 @@ type WebFetchConfig struct {
 	MaxBytes     int64
 	MaxTextBytes int64
 	Timeout      time.Duration
+	ProxyURL     string
 }
 
 // webFetchCfg is the package-level config with safe defaults.
@@ -34,6 +37,7 @@ var webFetchCfg = WebFetchConfig{
 	MaxBytes:     5 * 1024 * 1024,
 	MaxTextBytes: 200 * 1024,
 	Timeout:      30 * time.Second,
+	ProxyURL:     "socks5://localhost:9050",
 }
 
 func init() {
@@ -46,12 +50,30 @@ func init() {
 				"url": {
 					"type": "string",
 					"description": "The URL of the web page to fetch"
+				},
+				"raw": {
+					"type": "boolean",
+					"description": "If true, return the raw response body without text extraction"
 				}
 			},
 			"required": ["url"]
 		}`),
 		webFetch,
 	)
+}
+
+// LoadWebFetchConfig unmarshals the web_fetch JSON config into webFetchCfg.
+// Call this from main after LoadConfig.
+func LoadWebFetchConfig(raw json.RawMessage) {
+	if len(raw) == 0 {
+		return
+	}
+	json.Unmarshal(raw, &webFetchCfg)
+	if webFetchCfg.ProxyURL != "" {
+		log.Printf("[WEB_FETCH] Using proxy: %s", webFetchCfg.ProxyURL)
+	} else {
+		log.Printf("[WEB_FETCH] No proxy configured, connecting directly")
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -100,12 +122,27 @@ var blockedTypes = []string{
 // HTTP client
 // ---------------------------------------------------------------------------
 
-func newHTTPClient(timeout time.Duration) *http.Client {
+func newHTTPClient(timeout time.Duration, proxyURL string) *http.Client {
 	transport := &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout:   timeout,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
+	}
+	if proxyURL != "" {
+		proxyURI, err := url.Parse(proxyURL)
+		if err != nil {
+			log.Printf("[WEB_FETCH] Warning: invalid proxy URL %q: %v", proxyURL, err)
+		} else {
+			dialer, err := proxy.FromURL(proxyURI, proxy.Direct)
+			if err != nil {
+				log.Printf("[WEB_FETCH] Warning: failed to create proxy dialer: %v", err)
+			} else {
+				transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+					return dialer.Dial(network, address)
+				}
+			}
+		}
 	}
 	return &http.Client{
 		Timeout:   timeout,
@@ -142,7 +179,7 @@ func webFetch(args map[string]string) (string, error) {
 	}
 
 	cfg := webFetchCfg
-	client := newHTTPClient(cfg.Timeout)
+	client := newHTTPClient(cfg.Timeout, cfg.ProxyURL)
 
 	resp, err := doRequest(client, pageURL)
 	if err != nil {
@@ -164,6 +201,10 @@ func webFetch(args map[string]string) (string, error) {
 	body, err := readBody(resp.Body, cfg.MaxBytes)
 	if err != nil {
 		return "", err
+	}
+
+	if args["raw"] == "true" {
+		return truncateText(string(body), cfg.MaxTextBytes), nil
 	}
 
 	result, err := extractText(mediatype, body, parsedURL)

@@ -5,6 +5,9 @@ locolm
 # Database
 *.db
 
+# gguf models
+*.gguf
+
 # Profiling
 *.prof
 *.dot

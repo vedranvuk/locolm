@@ -9,11 +9,9 @@ import (
 // Config holds all locolm configuration. Loaded from locolm.json with
 // GOOGLE_* / EXA_* env overrides for third-party credentials.
 type Config struct {
-	MCPPort            string `json:"mcp_port"`
-	LlamaServerCommand string `json:"llama_server_command"`
-	BrowserCommand     string `json:"browser_command"`
-	GoogleAPIKey       string `json:"google_api_key"`
-	GoogleCSEID        string `json:"google_cse_id"`
+	MCPPort      string `json:"mcp_port"`
+	GoogleAPIKey string `json:"google_api_key"`
+	GoogleCSEID  string `json:"google_cse_id"`
 
 	// Raw tool configs — each tool package unmarshals its own.
 	// Keys match the JSON object keys in locolm.json.
