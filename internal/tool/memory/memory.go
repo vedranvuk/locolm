@@ -28,25 +28,22 @@ func init() {
 	}
 
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS memories (
-		key         TEXT NOT NULL,
+		path        TEXT PRIMARY KEY,
 		value       TEXT NOT NULL,
-		bucket      TEXT NOT NULL,
 		keywords    TEXT DEFAULT '',
 		created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-		updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-		PRIMARY KEY (key, bucket)
+		updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 	)`)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create table: %v", err))
 	}
 
-	// FTS5 full-text search index over key, keywords, and bucket.
+	// FTS5 full-text search index over path and keywords.
 	// This is a standalone FTS5 table that we manually keep in sync
 	// with the memories table on writes.
 	_, err = db.Exec(`CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-		key,
-		keywords,
-		bucket
+		path,
+		keywords
 	)`)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create FTS5 table: %v", err))
@@ -55,72 +52,67 @@ func init() {
 	// Register all memory tools.
 	mcp.RegisterTool(
 		"memory_save",
-		"Create or update a memory in a bucket. Use this to remember something for future conversations.",
+		"Create or update a memory. Use this to remember something for future conversations. Use path-style keys for hierarchy (e.g. 'project/theme_preference').",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"bucket":  {"type": "string", "description": "The bucket (category) to store the memory in (e.g. 'user', 'work', 'general')"},
-				"key":     {"type": "string", "description": "Unique key for the memory within the bucket (e.g. 'theme_preference')"},
+				"path":    {"type": "string", "description": "Unique path for the memory, use '/' for hierarchy (e.g. 'user/theme', 'project/ideas/cli_tool')"},
 				"value":   {"type": "string", "description": "The memory content to store"},
-				"keywords":{"type": "string", "description": "Optional comma-separated keywords for better search recall (e.g. 'user, theme, dark')"}
+				"keywords":{"type": "string", "description": "Optional comma-separated keywords for better search recall (e.g. 'user,theme,dark')"}
 			},
-			"required": ["bucket", "key", "value"]
+			"required": ["path", "value"]
 		}`),
 		memorySave,
 	)
 
 	mcp.RegisterTool(
 		"memory_edit",
-		"Update an existing memory's value and/or keywords in a bucket. Fails if the memory doesn't exist.",
+		"Update an existing memory's value and/or keywords. Fails if the memory doesn't exist.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"bucket":  {"type": "string", "description": "The bucket containing the memory"},
-				"key":     {"type": "string", "description": "The key of the memory to update"},
+				"path":    {"type": "string", "description": "The path of the memory to update"},
 				"value":   {"type": "string", "description": "The new value for the memory"},
 				"keywords":{"type": "string", "description": "Optional new comma-separated keywords"}
 			},
-			"required": ["bucket", "key", "value"]
+			"required": ["path", "value"]
 		}`),
 		memoryEdit,
 	)
 
 	mcp.RegisterTool(
 		"memory_delete",
-		"Delete a specific memory from a bucket.",
+		"Delete a specific memory. Use a trailing '/' to delete all memories under a path prefix (e.g. 'project/' deletes everything under project/).",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"bucket": {"type": "string", "description": "The bucket containing the memory"},
-				"key":    {"type": "string", "description": "The key of the memory to delete"}
+				"path": {"type": "string", "description": "The path of the memory to delete, or a prefix with trailing '/' to delete all under it"}
 			},
-			"required": ["bucket", "key"]
+			"required": ["path"]
 		}`),
 		memoryDelete,
 	)
 
 	mcp.RegisterTool(
 		"memory_load",
-		"Load a single memory's value from a bucket.",
+		"Load a single memory's value and timestamps by path.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"bucket": {"type": "string", "description": "The bucket containing the memory"},
-				"key":    {"type": "string", "description": "The key of the memory to load"}
+				"path": {"type": "string", "description": "The path of the memory to load"}
 			},
-			"required": ["bucket", "key"]
+			"required": ["path"]
 		}`),
 		memoryLoad,
 	)
 
 	mcp.RegisterTool(
 		"memory_list",
-		"List memory keys. Provide a bucket to list only that bucket's keys; omit to list all keys across all buckets. Provide a key to check a specific memory.",
+		"List memory paths. Provide a path prefix to list only memories under that hierarchy (e.g. 'project/' lists all project memories). Omit to list all memories.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"bucket": {"type": "string", "description": "Optional bucket name. If omitted, lists keys from all buckets."},
-				"key":    {"type": "string", "description": "Optional key name. If provided with bucket, checks that specific memory."}
+				"path": {"type": "string", "description": "Optional path prefix. Lists all memories under this hierarchy, or all memories if omitted."}
 			},
 			"required": []
 		}`),
@@ -129,72 +121,44 @@ func init() {
 
 	mcp.RegisterTool(
 		"memory_find",
-		"Search memories by keyword using full-text search. Returns matching bucket and key pairs.",
+		"Search memories by keyword using full-text search. Returns matching paths.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"query":  {"type": "string", "description": "Search query — words or phrases to match against keywords, keys, and bucket names"},
-				"bucket": {"type": "string", "description": "Optional bucket to restrict search to"}
+				"path":   {"type": "string", "description": "Optional path prefix to restrict search to (e.g. 'project/')"},
+				"query":  {"type": "string", "description": "Search query — words or phrases to match against keywords and paths"}
 			},
 			"required": ["query"]
 		}`),
 		memoryFind,
 	)
-
-	mcp.RegisterTool(
-		"memory_delete_bucket",
-		"Delete a bucket and all memories in it.",
-		json.RawMessage(`{
-			"type": "object",
-			"properties": {
-				"bucket": {"type": "string", "description": "The name of the bucket to delete"}
-			},
-			"required": ["bucket"]
-		}`),
-		memoryDeleteBucket,
-	)
-
-	mcp.RegisterTool(
-		"memory_list_buckets",
-		"List all memory buckets with their memory counts.",
-		json.RawMessage(`{
-			"type": "object",
-			"properties": {},
-			"required": []
-		}`),
-		memoryListBuckets,
-	)
 }
 
 // --- FTS5 sync helpers ---
 
-func ftsInsert(key, keywords, bucket string) {
-	db.Exec("INSERT INTO memories_fts(key, keywords, bucket) VALUES (?, ?, ?)", key, keywords, bucket)
+func ftsInsert(path, keywords string) {
+	db.Exec("INSERT INTO memories_fts(path, keywords) VALUES (?, ?)", path, keywords)
 }
 
-func ftsUpdate(oldKey, oldBucket, newKey, newKeywords, newBucket string) {
-	db.Exec("DELETE FROM memories_fts WHERE key = ? AND bucket = ?", oldKey, oldBucket)
-	ftsInsert(newKey, newKeywords, newBucket)
+func ftsUpdate(oldPath, newPath, newKeywords string) {
+	db.Exec("DELETE FROM memories_fts WHERE path = ?", oldPath)
+	ftsInsert(newPath, newKeywords)
 }
 
-func ftsDelete(key, bucket string) {
-	db.Exec("DELETE FROM memories_fts WHERE key = ? AND bucket = ?", key, bucket)
+func ftsDelete(path string) {
+	db.Exec("DELETE FROM memories_fts WHERE path = ?", path)
 }
 
-func ftsDeleteBucket(bucket string) {
-	db.Exec("DELETE FROM memories_fts WHERE bucket = ?", bucket)
+func ftsDeletePrefix(prefix string) {
+	db.Exec("DELETE FROM memories_fts WHERE path LIKE ?", prefix+"%")
 }
 
 // --- Tool implementations ---
 
 func memorySave(args map[string]string) (string, error) {
-	bucket, ok := args["bucket"]
-	if !ok || bucket == "" {
-		return "", fmt.Errorf("missing required argument: bucket")
-	}
-	key, ok := args["key"]
-	if !ok || key == "" {
-		return "", fmt.Errorf("missing required argument: key")
+	path, ok := args["path"]
+	if !ok || path == "" {
+		return "", fmt.Errorf("missing required argument: path")
 	}
 	value, ok := args["value"]
 	if !ok {
@@ -203,30 +167,26 @@ func memorySave(args map[string]string) (string, error) {
 	keywords := args["keywords"]
 
 	_, err := db.Exec(
-		`INSERT INTO memories (key, value, bucket, keywords, updated_at)
-		 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-		 ON CONFLICT(key, bucket) DO UPDATE SET value = excluded.value, keywords = excluded.keywords, updated_at = CURRENT_TIMESTAMP`,
-		key, value, bucket, keywords,
+		`INSERT INTO memories (path, value, keywords, updated_at)
+		 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+		 ON CONFLICT(path) DO UPDATE SET value = excluded.value, keywords = excluded.keywords, updated_at = CURRENT_TIMESTAMP`,
+		path, value, keywords,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to save memory: %w", err)
 	}
 
 	// Sync FTS5 index.
-	ftsDelete(key, bucket) // remove old entry if existed
-	ftsInsert(key, keywords, bucket)
+	ftsDelete(path) // remove old entry if existed
+	ftsInsert(path, keywords)
 
-	return fmt.Sprintf("Memory '%s' saved to bucket '%s'.", key, bucket), nil
+	return fmt.Sprintf("Memory '%s' saved.", path), nil
 }
 
 func memoryEdit(args map[string]string) (string, error) {
-	bucket, ok := args["bucket"]
-	if !ok || bucket == "" {
-		return "", fmt.Errorf("missing required argument: bucket")
-	}
-	key, ok := args["key"]
-	if !ok || key == "" {
-		return "", fmt.Errorf("missing required argument: key")
+	path, ok := args["path"]
+	if !ok || path == "" {
+		return "", fmt.Errorf("missing required argument: path")
 	}
 	value, ok := args["value"]
 	if !ok {
@@ -235,8 +195,8 @@ func memoryEdit(args map[string]string) (string, error) {
 	keywords := args["keywords"]
 
 	result, err := db.Exec(
-		`UPDATE memories SET value = ?, keywords = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ? AND bucket = ?`,
-		value, keywords, key, bucket,
+		`UPDATE memories SET value = ?, keywords = ?, updated_at = CURRENT_TIMESTAMP WHERE path = ?`,
+		value, keywords, path,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to edit memory: %w", err)
@@ -244,132 +204,123 @@ func memoryEdit(args map[string]string) (string, error) {
 
 	n, _ := result.RowsAffected()
 	if n == 0 {
-		return "", fmt.Errorf("memory '%s' not found in bucket '%s'", key, bucket)
+		return "", fmt.Errorf("memory '%s' not found", path)
 	}
 
 	// Sync FTS5 index.
-	ftsDelete(key, bucket)
-	ftsInsert(key, keywords, bucket)
+	ftsDelete(path)
+	ftsInsert(path, keywords)
 
-	return fmt.Sprintf("Memory '%s' updated in bucket '%s'.", key, bucket), nil
+	return fmt.Sprintf("Memory '%s' updated.", path), nil
 }
 
 func memoryDelete(args map[string]string) (string, error) {
-	bucket, ok := args["bucket"]
-	if !ok || bucket == "" {
-		return "", fmt.Errorf("missing required argument: bucket")
-	}
-	key, ok := args["key"]
-	if !ok || key == "" {
-		return "", fmt.Errorf("missing required argument: key")
+	path, ok := args["path"]
+	if !ok || path == "" {
+		return "", fmt.Errorf("missing required argument: path")
 	}
 
-	result, err := db.Exec("DELETE FROM memories WHERE key = ? AND bucket = ?", key, bucket)
+	// If path ends with '/', treat as prefix delete.
+	if strings.HasSuffix(path, "/") {
+		likePrefix := path + "%"
+
+		// Get count before delete for message.
+		var count int
+		err := db.QueryRow(
+			"SELECT COUNT(*) FROM memories WHERE path LIKE ?", likePrefix,
+		).Scan(&count)
+		if err != nil {
+			return "", fmt.Errorf("failed to count memories: %w", err)
+		}
+
+		_, err = db.Exec("DELETE FROM memories WHERE path LIKE ?", likePrefix)
+		if err != nil {
+			return "", fmt.Errorf("failed to delete memories: %w", err)
+		}
+
+		ftsDeletePrefix(path)
+
+		return fmt.Sprintf("Deleted %d memories under '%s'.", count, path), nil
+	}
+
+	result, err := db.Exec("DELETE FROM memories WHERE path = ?", path)
 	if err != nil {
 		return "", fmt.Errorf("failed to delete memory: %w", err)
 	}
 
 	n, _ := result.RowsAffected()
 	if n == 0 {
-		return "", fmt.Errorf("memory '%s' not found in bucket '%s'", key, bucket)
+		return "", fmt.Errorf("memory '%s' not found", path)
 	}
 
-	// Sync FTS5 index.
-	ftsDelete(key, bucket)
+	ftsDelete(path)
 
-	return fmt.Sprintf("Memory '%s' deleted from bucket '%s'.", key, bucket), nil
+	return fmt.Sprintf("Memory '%s' deleted.", path), nil
 }
 
 func memoryLoad(args map[string]string) (string, error) {
-	bucket, ok := args["bucket"]
-	if !ok || bucket == "" {
-		return "", fmt.Errorf("missing required argument: bucket")
-	}
-	key, ok := args["key"]
-	if !ok || key == "" {
-		return "", fmt.Errorf("missing required argument: key")
+	path, ok := args["path"]
+	if !ok || path == "" {
+		return "", fmt.Errorf("missing required argument: path")
 	}
 
-	var value string
+	var value, createdAt, updatedAt string
 	err := db.QueryRow(
-		"SELECT value FROM memories WHERE key = ? AND bucket = ?", key, bucket,
-	).Scan(&value)
+		"SELECT value, created_at, updated_at FROM memories WHERE path = ?", path,
+	).Scan(&value, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
-		return "", fmt.Errorf("memory '%s' not found in bucket '%s'", key, bucket)
+		return "", fmt.Errorf("memory '%s' not found", path)
 	}
 	if err != nil {
 		return "", fmt.Errorf("failed to load memory: %w", err)
 	}
 
-	return value, nil
+	return fmt.Sprintf("Path: %s\nCreated: %s\nModified: %s\nValue: %s", path, createdAt, updatedAt, value), nil
 }
 
 func memoryList(args map[string]string) (string, error) {
-	bucket := args["bucket"]
-	key := args["key"]
+	prefix := args["path"]
 
-	// Specific key lookup: return just the key name if it exists.
-	if bucket != "" && key != "" {
-		var exists string
-		err := db.QueryRow(
-			"SELECT key FROM memories WHERE key = ? AND bucket = ?", key, bucket,
-		).Scan(&exists)
-		if err == sql.ErrNoRows {
-			return fmt.Sprintf("Memory '%s' not found in bucket '%s'.", key, bucket), nil
+	var rows *sql.Rows
+	var err error
+
+	if prefix != "" {
+		// Ensure prefix ends with '/' for hierarchy matching, unless it's a full path.
+		if !strings.HasSuffix(prefix, "/") {
+			rows, err = db.Query(
+				"SELECT path, updated_at FROM memories WHERE path = ? OR path LIKE ? ORDER BY path",
+				prefix, prefix+"/%",
+			)
+		} else {
+			rows, err = db.Query(
+				"SELECT path, updated_at FROM memories WHERE path LIKE ? ORDER BY path",
+				prefix+"%",
+			)
 		}
-		if err != nil {
-			return "", fmt.Errorf("failed to check memory: %w", err)
-		}
-		return exists, nil
+	} else {
+		rows, err = db.Query("SELECT path, updated_at FROM memories ORDER BY path")
 	}
-
-	// List keys in a specific bucket.
-	if bucket != "" {
-		rows, err := db.Query("SELECT key FROM memories WHERE bucket = ? ORDER BY updated_at DESC", bucket)
-		if err != nil {
-			return "", fmt.Errorf("failed to list memories: %w", err)
-		}
-		defer rows.Close()
-
-		var keys []string
-		for rows.Next() {
-			var k string
-			if err := rows.Scan(&k); err != nil {
-				return "", fmt.Errorf("failed to scan row: %w", err)
-			}
-			keys = append(keys, k)
-		}
-
-		if len(keys) == 0 {
-			return fmt.Sprintf("No memories in bucket '%s'.", bucket), nil
-		}
-		return fmt.Sprintf("Keys in bucket '%s':\n%s", bucket, strings.Join(keys, "\n")), nil
-	}
-
-	// List all keys across all buckets.
-	rows, err := db.Query("SELECT bucket, key FROM memories ORDER BY bucket, updated_at DESC")
 	if err != nil {
 		return "", fmt.Errorf("failed to list memories: %w", err)
 	}
 	defer rows.Close()
 
 	var results []string
-	var currentBucket string
 	for rows.Next() {
-		var b, k string
-		if err := rows.Scan(&b, &k); err != nil {
+		var p, updatedAt string
+		if err := rows.Scan(&p, &updatedAt); err != nil {
 			return "", fmt.Errorf("failed to scan row: %w", err)
 		}
-		if b != currentBucket {
-			currentBucket = b
-			results = append(results, fmt.Sprintf("[%s]", b))
-		}
-		results = append(results, fmt.Sprintf("  %s", k))
+		results = append(results, fmt.Sprintf("%s  (modified: %s)", p, updatedAt))
 	}
 
 	if len(results) == 0 {
+		if prefix != "" {
+			return fmt.Sprintf("No memories found under '%s'.", prefix), nil
+		}
 		return "No memories stored.", nil
 	}
+
 	return strings.Join(results, "\n"), nil
 }
 
@@ -378,18 +329,18 @@ func memoryFind(args map[string]string) (string, error) {
 	if !ok || query == "" {
 		return "", fmt.Errorf("missing required argument: query")
 	}
-	bucket := args["bucket"]
+	prefix := args["path"]
 
 	var rows *sql.Rows
 	var err error
-	if bucket != "" {
+	if prefix != "" {
 		rows, err = db.Query(
-			"SELECT bucket, key FROM memories_fts WHERE memories_fts MATCH ? AND bucket = ? ORDER BY rank",
-			query, bucket,
+			"SELECT path FROM memories_fts WHERE memories_fts MATCH ? AND path LIKE ? ORDER BY rank",
+			query, prefix+"%",
 		)
 	} else {
 		rows, err = db.Query(
-			"SELECT bucket, key FROM memories_fts WHERE memories_fts MATCH ? ORDER BY rank",
+			"SELECT path FROM memories_fts WHERE memories_fts MATCH ? ORDER BY rank",
 			query,
 		)
 	}
@@ -400,57 +351,15 @@ func memoryFind(args map[string]string) (string, error) {
 
 	var results []string
 	for rows.Next() {
-		var b, k string
-		if err := rows.Scan(&b, &k); err != nil {
+		var p string
+		if err := rows.Scan(&p); err != nil {
 			return "", fmt.Errorf("failed to scan row: %w", err)
 		}
-		results = append(results, fmt.Sprintf("[%s] %s", b, k))
+		results = append(results, p)
 	}
 
 	if len(results) == 0 {
 		return fmt.Sprintf("No memories matching '%s'.", query), nil
 	}
 	return fmt.Sprintf("Search results for '%s':\n%s", query, strings.Join(results, "\n")), nil
-}
-
-func memoryDeleteBucket(args map[string]string) (string, error) {
-	bucket, ok := args["bucket"]
-	if !ok || bucket == "" {
-		return "", fmt.Errorf("missing required argument: bucket")
-	}
-
-	result, err := db.Exec("DELETE FROM memories WHERE bucket = ?", bucket)
-	if err != nil {
-		return "", fmt.Errorf("failed to delete bucket: %w", err)
-	}
-
-	n, _ := result.RowsAffected()
-
-	// Sync FTS5 index.
-	ftsDeleteBucket(bucket)
-
-	return fmt.Sprintf("Bucket '%s' deleted (%d memories removed).", bucket, n), nil
-}
-
-func memoryListBuckets(args map[string]string) (string, error) {
-	rows, err := db.Query("SELECT bucket, COUNT(*) FROM memories GROUP BY bucket ORDER BY bucket")
-	if err != nil {
-		return "", fmt.Errorf("failed to list buckets: %w", err)
-	}
-	defer rows.Close()
-
-	var results []string
-	for rows.Next() {
-		var b string
-		var count int
-		if err := rows.Scan(&b, &count); err != nil {
-			return "", fmt.Errorf("failed to scan row: %w", err)
-		}
-		results = append(results, fmt.Sprintf("%s (%d)", b, count))
-	}
-
-	if len(results) == 0 {
-		return "No buckets (no memories stored).", nil
-	}
-	return strings.Join(results, "\n"), nil
 }

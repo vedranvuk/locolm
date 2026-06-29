@@ -16,7 +16,7 @@ var startTime = time.Now()
 func init() {
 	mcp.RegisterTool(
 		"sys_info",
-		"Get current system information: date, time, timezone, OS, architecture, hostname, working directory, user, Go version, and uptime. Call this at the start of every conversation to orient yourself.",
+		"MANDATORY: You MUST call this tool FIRST before any other tool in every conversation. Returns date, time, timezone, OS, architecture, hostname, working directory, user, Go version, and uptime. Do not skip this. Do not call any other tool before this one.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {},
