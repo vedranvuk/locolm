@@ -54,10 +54,14 @@ func init() {
 				"raw": {
 					"type": "boolean",
 					"description": "If true, return the raw response body without text extraction"
-				}
 			},
-			"required": ["url"]
-		}`),
+			"use_proxy": {
+				"type": "boolean",
+				"description": "If true, route the request through the configured proxy. Defaults to true when a proxy is configured."
+			}
+		},
+		"required": ["url"]
+	}`),
 		webFetch,
 	)
 }
@@ -179,7 +183,19 @@ func webFetch(args map[string]string) (string, error) {
 	}
 
 	cfg := webFetchCfg
-	client := newHTTPClient(cfg.Timeout, cfg.ProxyURL)
+
+	// Determine proxy usage: explicit arg wins, otherwise fall back to config default.
+	proxyURL := ""
+	if useProxy, ok := args["use_proxy"]; ok {
+		if useProxy == "true" {
+			proxyURL = cfg.ProxyURL
+		}
+		// "false" → direct connection (proxyURL stays "")
+	} else if cfg.ProxyURL != "" {
+		proxyURL = cfg.ProxyURL
+	}
+
+	client := newHTTPClient(cfg.Timeout, proxyURL)
 
 	resp, err := doRequest(client, pageURL)
 	if err != nil {

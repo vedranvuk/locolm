@@ -51,3 +51,6 @@ locolm.json
 # Go workspace
 go.work
 go.work.sum
+
+# bin dir
+bin/*
