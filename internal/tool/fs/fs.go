@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -176,19 +177,19 @@ func init() {
 	)
 
 	mcp.RegisterTool(
-		"fs_edit_range",
-		"Replace a specific range of lines with new content.",
+		"fs_replace",
+		"Replace exact literal string or regex pattern in a file.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"path": { "type": "string", "description": "Path to the file." },
-				"startLine": { "type": "string", "description": "1-based start line." },
-				"endLine": { "type": "string", "description": "1-based end line." },
-				"newContent": { "type": "string", "description": "New content to insert." }
+				"old_content": { "type": "string", "description": "The exact literal string or regex pattern to replace. Must match exactly, including whitespace." },
+				"new_content": { "type": "string", "description": "The replacement string." },
+				"is_regex": { "type": "string", "description": "Set to 'true' to evaluate old_content as a regular expression. Defaults to 'false' (literal match)." }
 			},
-			"required": ["path", "startLine", "endLine", "newContent"]
+			"required": ["path", "old_content", "new_content"]
 		}`),
-		fsEditRange,
+		fsReplace,
 	)
 
 	mcp.RegisterTool(
@@ -724,41 +725,40 @@ func buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, ma
 }
 
 // ---------------------------------------------------------------------------
-// fs_edit_range
+// fs_replace
 // ---------------------------------------------------------------------------
 
-func fsEditRange(args map[string]string) (string, error) {
+func fsReplace(args map[string]string) (string, error) {
 	resolved, err := resolveAndValidate(args["path"])
 	if err != nil {
 		return "", err
 	}
 
-	content, err := os.ReadFile(resolved)
+	contentBytes, err := os.ReadFile(resolved)
 	if err != nil {
 		return "", err
 	}
 
-	lines := strings.Split(string(content), "\n")
-	start, _ := strconv.Atoi(args["startLine"])
-	end, _ := strconv.Atoi(args["endLine"])
+	content := string(contentBytes)
+	oldContent := args["old_content"]
+	newContent := args["new_content"]
+	isRegex := args["is_regex"] == "true"
 
-	if start < 1 {
-		start = 1
-	}
-	if end > len(lines) {
-		end = len(lines)
-	}
-	if start > end {
-		return "", fmt.Errorf("invalid range")
+	var finalContent string
+	if isRegex {
+		re, err := regexp.Compile(oldContent)
+		if err != nil {
+			return "", fmt.Errorf("invalid regex pattern: %w", err)
+		}
+		finalContent = re.ReplaceAllString(content, newContent)
+	} else {
+		if !strings.Contains(content, oldContent) {
+			return "", fmt.Errorf("exact match for old_content not found in file")
+		}
+		// Replace the first exact match to allow sequential edits of identical blocks
+		finalContent = strings.Replace(content, oldContent, newContent, 1)
 	}
 
-	newLines := strings.Split(args["newContent"], "\n")
-	finalLines := append(lines[:start-1], newLines...)
-	if end < len(lines) {
-		finalLines = append(finalLines, lines[end:]...)
-	}
-
-	finalContent := strings.Join(finalLines, "\n")
 	if int64(len(finalContent)) > fsCfg.WriteMaxBytes {
 		return "", fmt.Errorf("content size exceeds write limit")
 	}
@@ -766,7 +766,7 @@ func fsEditRange(args map[string]string) (string, error) {
 	if err := os.WriteFile(resolved, []byte(finalContent), 0644); err != nil {
 		return "", err
 	}
-	return "Range edited successfully", nil
+	return "Content replaced successfully", nil
 }
 
 // ---------------------------------------------------------------------------
