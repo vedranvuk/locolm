@@ -26,58 +26,28 @@ func init() {
 	)
 }
 
-func sysInfoTool(args map[string]string) (string, error) {
-	return sysInfo()
-}
-
-func sysInfo() (string, error) {
+func sysInfoTool(_ map[string]string) (string, error) {
 	now := time.Now()
-
-	date := now.Format("2006-01-02")
-	tm := now.Format("15:04:05")
-	tz, offset := now.Zone()
-	utcOff := fmt.Sprintf("%+03d:%02d", offset/3600, (offset%3600)/60)
-
 	hostname, _ := os.Hostname()
 	cwd, _ := os.Getwd()
 
-	user := os.Getenv("USERNAME")
-	if user == "" {
-		user = os.Getenv("USER")
-	}
+	uptime := now.Sub(startTime).Round(time.Second).String()
 
-	osName := runtime.GOOS
-	arch := runtime.GOARCH
-	goVer := runtime.Version()
+	info := fmt.Sprintf(
+		"### System Runtime\n"+
+			"- **Date/Time**: %s\n"+
+			"- **Uptime**: %s\n"+
+			"- **OS/Arch**: %s/%s\n"+
+			"- **Hostname**: %s\n"+
+			"- **User**: %s\n"+
+			"- **CWD**: %s\n",
+		now.Format("2006-01-02 15:04:05"),
+		uptime,
+		runtime.GOOS, runtime.GOARCH,
+		hostname,
+		os.Getenv("USER"),
+		cwd,
+	)
 
-	uptime := "unknown"
-	if startTime.IsZero() {
-		uptime = "unknown"
-	} else {
-		elapsed := now.Sub(startTime)
-		hours := int(elapsed.Hours())
-		minutes := int(elapsed.Minutes()) % 60
-		if hours > 0 {
-			uptime = fmt.Sprintf("%dh %dm", hours, minutes)
-		} else {
-			uptime = fmt.Sprintf("%dm", minutes)
-		}
-	}
-
-	return fmt.Sprintf(
-		"System Information\n"+
-			"─────────────────────────────\n"+
-			"Date:       %s\n"+
-			"Time:       %s\n"+
-			"Timezone:   %s (UTC%s)\n"+
-			"OS:         %s\n"+
-			"Arch:       %s\n"+
-			"Hostname:   %s\n"+
-			"CWD:        %s\n"+
-			"User:       %s\n"+
-			"Go Version: %s\n"+
-			"Uptime:     %s\n"+
-			"─────────────────────────────",
-		date, tm, tz, utcOff, osName, arch, hostname, cwd, user, goVer, uptime,
-	), nil
+	return info, nil
 }
