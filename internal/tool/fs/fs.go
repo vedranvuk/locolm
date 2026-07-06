@@ -153,7 +153,7 @@ func init() {
 		fsFind,
 	)
 
-	mcp.RegisterTool(
+mcp.RegisterTool(
 		"fs_tree",
 		"Display a directory tree structure as indented text. Depth-limited for safety.",
 		json.RawMessage(`{
@@ -170,12 +170,16 @@ func init() {
 				"exclude": {
 					"type": "string",
 					"description": "Comma-separated list of directory names to exclude (e.g. 'node_modules,.git,vendor')"
+				},
+				"show_hidden": {
+					"type": "string",
+					"description": "Set to 'true' to include hidden files/directories (starts with dot). Defaults to 'false'."
 				}
 			}
 		}`),
 		fsTree,
 	)
-
+	
 	mcp.RegisterTool(
 		"fs_replace",
 		"Replace exact literal string or regex pattern in a file.",
@@ -665,19 +669,27 @@ func fsTree(args map[string]string) (string, error) {
 		}
 	}
 
-	log.Printf("[FS] Tree of %s (depth %d, exclude %v)", resolved, maxDepth, excludeSet)
+	showHidden := args["show_hidden"] == "true"
+
+	log.Printf("[FS] Tree of %s (depth %d, exclude %v, show_hidden %v)", resolved, maxDepth, excludeSet, showHidden)
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%s\n", resolved)
 
 	treeMaxEntries := fsCfg.FindMaxResults // reuse find limit as tree entry cap
-	buildTree(&sb, resolved, "", 0, maxDepth, excludeSet, &treeMaxEntries)
+	buildTree(&sb, resolved, "", 0, maxDepth, excludeSet, &treeMaxEntries, showHidden)
 
 	log.Printf("[FS] Tree output: %d lines", strings.Count(sb.String(), "\n"))
 	return sb.String(), nil
 }
 
-func buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, maxDepth int, excludeSet map[string]bool, remaining *int) {
+func isHidden(name string) bool {
+	// A simple dot-prefix check covers Unix hidden files and standard developer
+	// configurations (like .git, .vscode, .env) cross-platform.
+	return strings.HasPrefix(name, ".")
+}
+
+func buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, maxDepth int, excludeSet map[string]bool, remaining *int, showHidden bool) {
 	if depth >= maxDepth || *remaining <= 0 {
 		return
 	}
@@ -687,25 +699,34 @@ func buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, ma
 		return
 	}
 
-	// Sort: directories first, then by name
-	sort.Slice(entries, func(i, j int) bool {
-		iIsDir := entries[i].IsDir()
-		jIsDir := entries[j].IsDir()
-		if iIsDir != jIsDir {
-			return iIsDir // directories first
-		}
-		return entries[i].Name() < entries[j].Name()
-	})
-
-	for i, entry := range entries {
-		if *remaining <= 0 {
-			return
-		}
+	// Filter entries early so the last-item connector logic (└──) is calculated accurately
+	var filtered []os.DirEntry
+	for _, entry := range entries {
 		if excludeSet[entry.Name()] {
 			continue
 		}
+		if !showHidden && isHidden(entry.Name()) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
 
-		isLast := i == len(entries)-1
+	// Sort: directories first, then by name
+	sort.Slice(filtered, func(i, j int) bool {
+		iIsDir := filtered[i].IsDir()
+		jIsDir := filtered[j].IsDir()
+		if iIsDir != jIsDir {
+			return iIsDir // directories first
+		}
+		return filtered[i].Name() < filtered[j].Name()
+	})
+
+	for i, entry := range filtered {
+		if *remaining <= 0 {
+			return
+		}
+
+		isLast := i == len(filtered)-1
 		connector := "├── "
 		if isLast {
 			connector = "└── "
@@ -719,7 +740,7 @@ func buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, ma
 			if isLast {
 				extension = "    "
 			}
-			buildTree(sb, filepath.Join(dirPath, entry.Name()), prefix+extension, depth+1, maxDepth, excludeSet, remaining)
+			buildTree(sb, filepath.Join(dirPath, entry.Name()), prefix+extension, depth+1, maxDepth, excludeSet, remaining, showHidden)
 		}
 	}
 }
