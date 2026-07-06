@@ -45,69 +45,136 @@ func init() {
 	// --- LIFECYCLE MANAGEMENT ---
 	mcp.RegisterTool(
 		"gopls_workspace_activate",
-		"Sets the active Go project context workspace directory. Mandatory first step: this sets the tracking context for ALL other Go tools. This gopls toolset is the absolute go-to, premier method for analyzing Go source code. Run this whenever switching, opening, or exploring any Go project.",
-		json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","description":"Absolute path to the Go project root directory (containing the go.mod file)."}},"required":["path"]}`),
+		"Sets the active Go project context workspace directory.",
+		json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"path": {
+					"type": "string",
+					"description": "Absolute path to the Go project root directory (containing the go.mod file)."
+				}
+			},
+			"required": ["path"]
+		}`),
 		goplsWorkspaceActivate,
 	)
 
 	// --- CATEGORY 1: NAVIGATION & DISCOVERY ---
 	mcp.RegisterTool(
 		"gopls_definition",
-		"Locates the exact declaration position of a Go identifier. Use this to jump directly to where a target Go function, struct, interface, or variable is natively defined in the Go source code.",
-		json.RawMessage(`{"type":"object","properties":{"file":{"type":"string","description":"Relative or absolute path to the target Go (.go) file."},"line":{"type":"string","description":"1-based line number."},"character":{"type":"string","description":"0-based character offset within that line."}},"required":["file","line","character"]}`),
+		"Locates the exact declaration position of a Go identifier.",
+		json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"file": { "type": "string", "description": "Relative or absolute path to the target Go (.go) file." },
+				"line": { "type": "string", "description": "1-based line number." },
+				"character": { "type": "string", "description": "0-based character offset within that line." }
+			},
+			"required": ["file", "line", "character"]
+		}`),
 		goplsDefinition,
 	)
 
 	mcp.RegisterTool(
 		"gopls_references",
-		"Traces and lists all occurrences, call sites, and usages of a specific Go identifier across the entire active Go workspace. Use this to audit Go symbol dependencies or map out Go data flows.",
-		json.RawMessage(`{"type":"object","properties":{"file":{"type":"string","description":"Relative or absolute path to the target Go (.go) file."},"line":{"type":"string","description":"1-based line number."},"character":{"type":"string","description":"0-based character offset within that line."}},"required":["file","line","character"]}`),
+		"Traces and lists all occurrences, call sites, and usages of a specific Go identifier.",
+		json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"file": { "type": "string", "description": "Relative or absolute path to the target Go (.go) file." },
+				"line": { "type": "string", "description": "1-based line number." },
+				"character": { "type": "string", "description": "0-based character offset within that line." }
+			},
+			"required": ["file", "line", "character"]
+		}`),
 		goplsReferences,
 	)
 
 	mcp.RegisterTool(
 		"gopls_implementation",
-		"Identifies all concrete Go structs, types, or methods that actively implement a target Go interface. Use this to unravel polymorphic Go layouts and see what code fulfills a Go interface constraint.",
-		json.RawMessage(`{"type":"object","properties":{"file":{"type":"string","description":"Relative or absolute path to the Go (.go) file containing the interface."},"line":{"type":"string","description":"1-based line number."},"character":{"type":"string","description":"0-based character offset within that line."}},"required":["file","line","character"]}`),
+		"Identifies all concrete Go structs, types, or methods that actively implement a target Go interface.",
+		json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"file": { "type": "string", "description": "Relative or absolute path to the Go (.go) file containing the interface." },
+				"line": { "type": "string", "description": "1-based line number." },
+				"character": { "type": "string", "description": "0-based character offset within that line." }
+			},
+			"required": ["file", "line", "character"]
+		}`),
 		goplsImplementation,
 	)
 
 	mcp.RegisterTool(
 		"gopls_symbols",
-		"Performs a Go workspace-wide fuzzy search to look up global Go definitions (Go functions, structs, variables, interfaces) by name matching. Use this to quickly jump to known Go assets without knowing their file paths.",
-		json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","description":"Fuzzy search term or Go symbol identifier (e.g., 'NewServer' or 'Config')."}},"required":["query"]}`),
+		"Performs a Go workspace-wide fuzzy search to look up global Go definitions.",
+		json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"query": { "type": "string", "description": "Fuzzy search term or Go symbol identifier." }
+			},
+			"required": ["query"]
+		}`),
 		goplsSymbols,
 	)
 
 	// --- CATEGORY 2: DIAGNOSTICS & REAL-TIME ANALYSIS ---
 	mcp.RegisterTool(
 		"gopls_diagnostics",
-		"Extracts real-time Go compiler diagnostics, Go type-checking errors, and static analysis warnings caught by the background Go daemon. Use this to verify Go code health and catch build-breaking issues on demand.",
-		json.RawMessage(`{"type":"object","properties":{"file":{"type":"string","description":"Optional absolute or relative Go (.go) file path to narrow down scope. If omitted, returns all Go workspace errors."}}}`),
+		"Extracts real-time Go compiler diagnostics.",
+		json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"file": { "type": "string", "description": "Optional Go file path to narrow down scope." }
+			}
+		}`),
 		goplsDiagnostics,
 	)
 
 	// --- CATEGORY 3: SMART CODE ASSISTANCE ---
 	mcp.RegisterTool(
 		"gopls_completion",
-		"Generates context-aware Go code intelligence completions, Go function signature layouts, and Go type hints for a cursor coordinate. Use this to safely discover valid parameters or structural Go method offerings.",
-		json.RawMessage(`{"type":"object","properties":{"file":{"type":"string","description":"Relative or absolute path to the target Go (.go) file."},"line":{"type":"string","description":"1-based line number."},"character":{"type":"string","description":"0-based character offset within that line."}},"required":["file","line","character"]}`),
+		"Generates context-aware Go code intelligence completions.",
+		json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"file": { "type": "string", "description": "Relative or absolute path to the target Go (.go) file." },
+				"line": { "type": "string", "description": "1-based line number." },
+				"character": { "type": "string", "description": "0-based character offset within that line." }
+			},
+			"required": ["file", "line", "character"]
+		}`),
 		goplsCompletion,
 	)
 
 	// --- CATEGORY 4: TRANSFORMATIONS & REFACTORING ---
 	mcp.RegisterTool(
 		"gopls_rename",
-		"Executes an automated, structurally safe refactoring rename of a Go identifier across every Go file in the active Go workspace. Use this to modify Go names globally without breaking references.",
-		json.RawMessage(`{"type":"object","properties":{"file":{"type":"string","description":"Relative or absolute path to the Go file containing the target Go symbol."},"line":{"type":"string","description":"1-based line number."},"character":{"type":"string","description":"0-based character offset within that line."},"new_name":{"type":"string","description":"The replacement Go identifier string."}},"required":["file","line","character","new_name"]}`),
+		"Executes an automated, structurally safe refactoring rename of a Go identifier.",
+		json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"file": { "type": "string", "description": "Relative or absolute path to the Go file." },
+				"line": { "type": "string", "description": "1-based line number." },
+				"character": { "type": "string", "description": "0-based character offset within that line." },
+				"new_name": { "type": "string", "description": "The replacement Go identifier string." }
+			},
+			"required": ["file", "line", "character", "new_name"]
+		}`),
 		goplsRename,
 	)
 
 	// --- CATEGORY 5: ECOSYSTEM SUPPORT ---
 	mcp.RegisterTool(
 		"gopls_format",
-		"Calculates native gofmt spacing layouts and automatically evaluates missing or redundant Go import blocks. Use this to evaluate Go layout conformance or resolve Go compilation import defects.",
-		json.RawMessage(`{"type":"object","properties":{"file":{"type":"string","description":"Relative or absolute path to the target Go source (.go) file or go.mod asset."}},"required":["file"]}`),
+		"Calculates native gofmt spacing layouts and automatically evaluates import blocks.",
+		json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"file": { "type": "string", "description": "Relative or absolute path to the target Go source (.go) file or go.mod asset." }
+			},
+			"required": ["file"]
+		}`),
 		goplsFormat,
 	)
 
@@ -240,7 +307,9 @@ func goplsReferences(args map[string]string) (string, error) {
 		return "", err
 	}
 
-	var response struct{ Result []lspLocation `json:"result"` }
+	var response struct {
+		Result []lspLocation `json:"result"`
+	}
 	json.Unmarshal(res, &response)
 
 	if len(response.Result) == 0 {
@@ -471,7 +540,9 @@ func handleLocationQuery(method string, args map[string]string) (string, error) 
 		return "", err
 	}
 
-	var response struct{ Result json.RawMessage `json:"result"` }
+	var response struct {
+		Result json.RawMessage `json:"result"`
+	}
 	json.Unmarshal(res, &response)
 
 	if string(response.Result) == "null" || len(response.Result) == 0 {
