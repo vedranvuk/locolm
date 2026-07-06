@@ -43,8 +43,11 @@ var fsCfg = FSConfig{
 }
 
 func init() {
+
 	// Register tools
-	mcp.RegisterTool(
+
+
+mcp.RegisterTool(
 		"fs_list",
 		"List directory contents. Returns name, size, type, and modification time for each entry.",
 		json.RawMessage(`{
@@ -63,6 +66,10 @@ func init() {
 					"type": "string",
 					"description": "Sort order: 'asc' or 'desc'. Defaults to 'asc'.",
 					"enum": ["asc", "desc"]
+				},
+				"show_hidden": {
+					"type": "string",
+					"description": "Set to 'true' to include hidden files/directories (starts with dot). Defaults to 'false'."
 				}
 			}
 		}`),
@@ -71,7 +78,7 @@ func init() {
 
 	mcp.RegisterTool(
 		"fs_read",
-		"Read a text file's content. File must be within an allowed path and under the read size limit.",
+		"Read a text file's content.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -95,7 +102,7 @@ func init() {
 
 	mcp.RegisterTool(
 		"fs_write",
-		"Create or overwrite a file with text content. File must be within an allowed path.",
+		"Create or overwrite a file with text content.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -115,7 +122,7 @@ func init() {
 
 	mcp.RegisterTool(
 		"fs_delete",
-		"Delete a single file. The file must be within an allowed path. Cannot delete directories.",
+		"Delete a single file. Cannot delete directories.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -155,7 +162,7 @@ func init() {
 
 mcp.RegisterTool(
 		"fs_tree",
-		"Display a directory tree structure as indented text. Depth-limited for safety.",
+		"Display a directory tree structure as indented text.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -165,7 +172,7 @@ mcp.RegisterTool(
 				},
 				"depth": {
 					"type": "string",
-					"description": "Maximum depth to traverse. Defaults to configured limit (3)."
+					"description": "Maximum depth to traverse. Defaults to (3)."
 				},
 				"exclude": {
 					"type": "string",
@@ -182,7 +189,7 @@ mcp.RegisterTool(
 	
 	mcp.RegisterTool(
 		"fs_replace",
-		"Replace exact literal string or regex pattern in a file.",
+		"Replace exact literal string or regex pattern in a file. Use this tool to edit source files.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -198,7 +205,7 @@ mcp.RegisterTool(
 
 	mcp.RegisterTool(
 		"fs_append",
-		"Append exact content to the end of a file. You MUST include '\\n' if you want a new line.",
+		"Append exact content to the end of a file. Escape special characters (Go syntax).",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -212,7 +219,7 @@ mcp.RegisterTool(
 
 	mcp.RegisterTool(
 		"fs_prepend",
-		"Prepend exact content to the beginning of a file. You MUST include '\\n' if you want to separate it from existing content.",
+		"Prepend exact content to the beginning of a file. Escape special characters (Go syntax).",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -329,6 +336,10 @@ func resolveAndValidate(inputPath string) (string, error) {
 // fs_list
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// fs_list
+// ---------------------------------------------------------------------------
+
 type listEntry struct {
 	Name     string `json:"name"`
 	Size     int64  `json:"size"`
@@ -352,10 +363,16 @@ func fsList(args map[string]string) (string, error) {
 		return "", fmt.Errorf("failed to read directory %q: %w", resolved, err)
 	}
 
-	log.Printf("[FS] Listing %s (%d entries)", resolved, len(entries))
+	showHidden := args["show_hidden"] == "true"
+
+	log.Printf("[FS] Listing %s (read %d raw entries, show_hidden %v)", resolved, len(entries), showHidden)
 
 	var results []listEntry
 	for _, entry := range entries {
+		if !showHidden && isHidden(entry.Name()) {
+			continue
+		}
+
 		info, err := entry.Info()
 		if err != nil {
 			continue // skip entries we can't stat
