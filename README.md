@@ -1,16 +1,6 @@
 # locolm
 
-AI slopped local MCP (Model Context Protocol) server that gives your LLM access to tools for web search, web fetching, filesystem operations, persistent memory, and more. locolm runs as a standalone MCP server — connect any MCP client to it.
-
-## What it does
-
-locolm provides an MCP server that exposes tools for:
-
-- **Web & Research** — web search (Google, Exa), web fetching, Wikidata queries
-- **Filesystem** — sandboxed file read/write/delete/find so the LLM can work with your local files
-- **Command execution** — run CLI commands with allowlist security
-- **Memory** — SQLite-backed persistent memory so the LLM recalls context across conversations
-- **System info** — date, OS, arch, hostname, uptime
+AI slopped local MCP with some basic tools for agenticks.
 
 ## Quick start
 
@@ -37,13 +27,16 @@ The MCP server listens on `http://127.0.0.1:11501`. Point your MCP client at it.
 | `fs_delete` | Delete a single file |
 | `fs_find` | Find files by glob pattern |
 | `fs_tree` | Display directory tree structure |
-| `memory_save` | Create or update a memory in a bucket |
-| `memory_edit` | Update an existing memory (fails if not found) |
-| `memory_delete` | Delete a specific memory |
-| `memory_load` | Load a single memory's value |
-| `memory_list` | List memories (all or by bucket) |
-| `memory_delete_bucket` | Delete a bucket and all its memories |
-| `memory_list_buckets` | List all buckets with counts |
+| `patch_memory` | Create or update memory facts for an entity |
+| `search_memory` | Search historical memory observations |
+| `get_entity_context` | Load all facts for a named entity |
+| `news_search` | Search news articles using newsapi.org |
+| `news_sources` | List available newsapi.org sources |
+| `wolfram_query` | Query Wolfram Alpha Full Results API |
+| `wolfram_llm` | Query Wolfram Alpha LLM API |
+| `wolfram_short` | Query Wolfram Alpha Short Answers API |
+| `wolfram_image` | Query Wolfram Alpha Simple API for images |
+| `wolfram_recognize` | Query Wolfram Alpha Recognize API |
 
 ## Configuration
 
@@ -87,6 +80,8 @@ Third-party API keys are set via environment variables:
 | `GOOGLE_API_KEY` | Google Search API key |
 | `GOOGLE_CSE_ID` | Google Custom Search Engine ID |
 | `EXA_API_KEY` | Exa AI search API key |
+| `NEWSAPI_API_KEY` | NewsAPI.org API key |
+| `WOLFRAM_APPID` | Wolfram Alpha AppID |
 
 ## Proxy configuration
 
@@ -107,17 +102,7 @@ locolm stores its data next to the executable:
 
 Both must be in the same directory as `locolm.exe`. When running via `go run ./cmd/locolm/`, they must be in the project root (the working directory).
 
-## System prompt
 
-See `prompt.md` for the system prompt to use with your LLM. It teaches the model when and how to use each tool.
-
-## Project status
-
-This is a work in progress. Some planned features are not yet implemented:
-
-- Automatic download of llama-cpp binaries
-- Model downloading
-- First-run setup wizard
 
 ## License
 
