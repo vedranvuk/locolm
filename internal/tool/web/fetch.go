@@ -57,7 +57,7 @@ func init() {
 			},
 			"use_proxy": {
 				"type": "boolean",
-				"description": "If true, route the request through the configured proxy. Defaults to true when a proxy is configured."
+				"description": "If true, route the request through the configured TOR proxy. Defaults to true."
 			}
 		},
 		"required": ["url"]
