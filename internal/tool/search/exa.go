@@ -16,17 +16,17 @@ import (
 // --- Exa Search types ---
 
 type exaSearchRequest struct {
-	Query           string          `json:"query"`
-	Type            string          `json:"type"`
-	NumResults      int             `json:"numResults"`
-	Contents        exaContents     `json:"contents"`
-	SystemPrompt    string          `json:"systemPrompt,omitempty"`
-	OutputSchema    json.RawMessage `json:"outputSchema,omitempty"`
+	Query        string          `json:"query"`
+	Type         string          `json:"type"`
+	NumResults   int             `json:"numResults"`
+	Contents     exaContents     `json:"contents"`
+	SystemPrompt string          `json:"systemPrompt,omitempty"`
+	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
 
-	IncludeDomains  []string        `json:"includeDomains,omitempty"`
-	ExcludeDomains  []string        `json:"excludeDomains,omitempty"`
-	StartPublished  string          `json:"startPublishedDate,omitempty"`
-	EndPublished    string          `json:"endPublishedDate,omitempty"`
+	IncludeDomains []string `json:"includeDomains,omitempty"`
+	ExcludeDomains []string `json:"excludeDomains,omitempty"`
+	StartPublished string   `json:"startPublishedDate,omitempty"`
+	EndPublished   string   `json:"endPublishedDate,omitempty"`
 }
 
 type exaContents struct {
@@ -36,7 +36,7 @@ type exaContents struct {
 }
 
 type exaText struct {
-	MaxCharacters    int    `json:"maxCharacters,omitempty"`
+	MaxCharacters   int    `json:"maxCharacters,omitempty"`
 	Verbosity       string `json:"verbosity,omitempty"`
 	IncludeHTMLTags bool   `json:"includeHTMLTags,omitempty"`
 }
@@ -50,15 +50,15 @@ type exaSearchResponse struct {
 }
 
 type exaResult struct {
-	Title            string    `json:"title"`
-	URL              string    `json:"url"`
-	ID               string    `json:"id"`
-	PublishedDate    string    `json:"publishedDate"`
-	Author           string    `json:"author"`
-	Text             string    `json:"text"`
-	Highlights       []string  `json:"highlights"`
-	HighlightScores  []float64 `json:"highlightScores"`
-	Summary          string    `json:"summary"`
+	Title           string    `json:"title"`
+	URL             string    `json:"url"`
+	ID              string    `json:"id"`
+	PublishedDate   string    `json:"publishedDate"`
+	Author          string    `json:"author"`
+	Text            string    `json:"text"`
+	Highlights      []string  `json:"highlights"`
+	HighlightScores []float64 `json:"highlightScores"`
+	Summary         string    `json:"summary"`
 }
 
 type exaOutput struct {
@@ -67,9 +67,9 @@ type exaOutput struct {
 }
 
 type exaGrounding struct {
-	Field      string       `json:"field"`
+	Field      string        `json:"field"`
 	Citations  []exaCitation `json:"citations"`
-	Confidence string       `json:"confidence"`
+	Confidence string        `json:"confidence"`
 }
 
 type exaCitation struct {
@@ -84,11 +84,11 @@ type exaCost struct {
 func init() {
 	mcp.RegisterTool(
 		"exa_search",
-		"Search the web using Exa AI (neural search with highlights and synthesized answers). Requires EXA_API_KEY env var.",
+		"Search the web using Exa AI - neural search with highlights and synthesized answers.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"query":             {"type": "string", "description": "The search query"},
+				"query":             {"type": "string", "description": "Search query"},
 				"type":              {"type": "string", "description": "Search type: auto (default), fast, instant, deep, deep-lite, deep-reasoning"},
 				"num":               {"type": "string", "description": "Number of results (default 10)"},
 				"include_domains":   {"type": "string", "description": "Comma-separated list of domains to restrict search to (e.g. 'github.com,stackoverflow.com')"},
@@ -100,13 +100,13 @@ func init() {
 			},
 			"required": ["query"]
 		}`),
-		searchExa,
+		exaSearch,
 	)
 }
 
 // --- Exa Search implementation ---
 
-func searchExa(args map[string]string) (string, error) {
+func exaSearch(args map[string]string) (string, error) {
 	query, ok := args["query"]
 	if !ok || query == "" {
 		return "", fmt.Errorf("missing required argument: query")

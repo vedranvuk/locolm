@@ -13,8 +13,6 @@ import (
 	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
-// --- Google Custom Search types ---
-
 type SearchResponse struct {
 	Items []struct {
 		Title       string `json:"title"`
@@ -27,55 +25,49 @@ type SearchResponse struct {
 func init() {
 	mcp.RegisterTool(
 		"google_search",
-		"Search the web using Google Custom Search",
+		"Search the web using Google.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"query": {
-					"type": "string",
-					"description": "The search query"
-				}
+				"query": { "type": "string", "description": "The search query" },
+				"num": { "type": "string", "description": "Number of results (1-10)" },
+				"start": { "type": "string", "description": "Start index for pagination" },
+				"dateRestrict": { "type": "string", "description": "Date range (e.g., 'd1', 'w1', 'm1', 'y1')" },
+				"gl": { "type": "string", "description": "Geopolitical country code (e.g., 'hr')" },
+				"lr": { "type": "string", "description": "Language code (e.g., 'lang_en')" }
 			},
 			"required": ["query"]
 		}`),
-		searchGoogle,
+		googleSearch,
 	)
 }
 
-// --- Google Search implementation ---
-
-func searchGoogle(args map[string]string) (string, error) {
-	query, ok := args["query"]
-	if !ok || query == "" {
-		return "", fmt.Errorf("missing required argument: query")
-	}
-
+func googleSearch(args map[string]string) (string, error) {
 	if os.Getenv("GOOGLE_API_KEY") == "" || os.Getenv("GOOGLE_CSE_ID") == "" {
-		return "", fmt.Errorf("google_search requires GOOGLE_API_KEY and GOOGLE_CSE_ID environment variables to be set in locolm.json")
+		return "", fmt.Errorf("google_search requires GOOGLE_API_KEY and GOOGLE_CSE_ID environment variables")
 	}
 
-	result, err := searchGoogleRaw(query)
-	if err != nil {
-		return "", err
+	params := url.Values{}
+	params.Add("key", os.Getenv("GOOGLE_API_KEY"))
+	params.Add("cx", os.Getenv("GOOGLE_CSE_ID"))
+	params.Add("q", args["query"])
+
+	optional := []string{"num", "start", "dateRestrict", "gl", "lr"}
+	for _, key := range optional {
+		if val, ok := args[key]; ok && val != "" {
+			params.Add(key, val)
+		}
 	}
-	return result, nil
-}
 
-func searchGoogleRaw(query string) (string, error) {
-	apiURL := fmt.Sprintf(
-		"https://www.googleapis.com/customsearch/v1?q=%s&cx=%s&key=%s",
-		url.QueryEscape(query), os.Getenv("GOOGLE_CSE_ID"), os.Getenv("GOOGLE_API_KEY"),
-	)
+	apiURL := "https://www.googleapis.com/customsearch/v1?" + params.Encode()
 
-	log.Printf("[SEARCH] Query: %q", query)
+	log.Printf("[SEARCH] Query: %q", args["query"])
 
 	resp, err := http.Get(apiURL)
 	if err != nil {
 		return "", fmt.Errorf("Google API request failed: %w", err)
 	}
 	defer resp.Body.Close()
-
-	log.Printf("[API] Google responded with status %d", resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -92,14 +84,9 @@ func searchGoogleRaw(query string) (string, error) {
 		return "", fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	log.Printf("[RESULT] Found %d results", len(searchResp.Items))
-
 	var results []string
 	for i, item := range searchResp.Items {
-		entry := fmt.Sprintf("%d. %s\n   URL: %s", i+1, item.Title, item.Link)
-		if item.Snippet != "" {
-			entry += fmt.Sprintf("\n   Snippet: %s", item.Snippet)
-		}
+		entry := fmt.Sprintf("%d. %s\n   URL: %s\n   Snippet: %s", i+1, item.Title, item.Link, item.Snippet)
 		results = append(results, entry)
 	}
 
