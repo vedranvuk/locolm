@@ -14,6 +14,7 @@ import (
 	"github.com/vedranvuk/locolm/internal/tool/exec"
 	"github.com/vedranvuk/locolm/internal/tool/fs"
 	"github.com/vedranvuk/locolm/internal/tool/web"
+	"github.com/vedranvuk/locolm/internal/tool/gopls"
 
 	// Blank imports: trigger init() in each tool package, which registers
 	// its tools via mcp.RegisterTool (replayed into the server in main).
@@ -33,6 +34,7 @@ func main() {
 	web.LoadWebFetchConfig(cfg.WebFetch)
 	fs.LoadFSConfig(cfg.FS)
 	exec.LoadExecConfig(cfg.Exec)
+	gopls.LoadGoplsConfig(cfg.Gopls) // <-- Add this line
 
 	port := cfg.MCPPort
 	if port == "" {
@@ -44,7 +46,7 @@ func main() {
 	mcpServer := mcp.New()
 
 	// Start MCP server first so it's ready when llama-server connects
-	server := &http.Server{Addr: ":" + port, Handler: mcpServer}
+	server := &http.Server{Addr: "0.0.0.0:" + port, Handler: mcpServer}
 
 	go func() {
 		log.Printf("MCP server starting on :%s", port)

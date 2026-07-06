@@ -14,11 +14,11 @@ type Config struct {
 	GoogleCSEID  string `json:"google_cse_id"`
 
 	// Raw tool configs — each tool package unmarshals its own.
-	// Keys match the JSON object keys in locolm.json.
 	WebFetch json.RawMessage `json:"web_fetch,omitempty"`
 	FS       json.RawMessage `json:"fs,omitempty"`
 	Exec     json.RawMessage `json:"exec,omitempty"`
 	Wikidata json.RawMessage `json:"wikidata,omitempty"`
+	Gopls    json.RawMessage `json:"gopls,omitempty"` // <-- Add this line
 }
 
 // LoadConfig reads locolm.json, applies GOOGLE_* env overrides, dispatches
