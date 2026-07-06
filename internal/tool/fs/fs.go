@@ -174,6 +174,64 @@ func init() {
 		}`),
 		fsTree,
 	)
+
+	mcp.RegisterTool(
+		"fs_edit_range",
+		"Replace a specific range of lines with new content.",
+		json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"path": { "type": "string", "description": "Path to the file." },
+				"startLine": { "type": "string", "description": "1-based start line." },
+				"endLine": { "type": "string", "description": "1-based end line." },
+				"newContent": { "type": "string", "description": "New content to insert." }
+			},
+			"required": ["path", "startLine", "endLine", "newContent"]
+		}`),
+		fsEditRange,
+	)
+
+	mcp.RegisterTool(
+		"fs_append",
+		"Append content to the end of a file.",
+		json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"path": { "type": "string" },
+				"content": { "type": "string" }
+			},
+			"required": ["path", "content"]
+		}`),
+		fsAppend,
+	)
+
+	mcp.RegisterTool(
+		"fs_prepend",
+		"Prepend content to the beginning of a file.",
+		json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"path": { "type": "string" },
+				"content": { "type": "string" }
+			},
+			"required": ["path", "content"]
+		}`),
+		fsPrepend,
+	)
+
+	mcp.RegisterTool(
+		"fs_move",
+		"Move or rename a file. Creates parent directories if missing.",
+		json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"path": { "type": "string", "description": "Current file path." },
+				"new_path": { "type": "string", "description": "New file path." }
+			},
+			"required": ["path", "new_path"]
+		}`),
+		fsMove,
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -663,4 +721,107 @@ func buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, ma
 			buildTree(sb, filepath.Join(dirPath, entry.Name()), prefix+extension, depth+1, maxDepth, excludeSet, remaining)
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// fs_edit_range
+// ---------------------------------------------------------------------------
+
+func fsEditRange(args map[string]string) (string, error) {
+	resolved, err := resolveAndValidate(args["path"])
+	if err != nil { return "", err }
+
+	content, err := os.ReadFile(resolved)
+	if err != nil { return "", err }
+
+	lines := strings.Split(string(content), "\n")
+	start, _ := strconv.Atoi(args["startLine"])
+	end, _ := strconv.Atoi(args["endLine"])
+
+	if start < 1 { start = 1 }
+	if end > len(lines) { end = len(lines) }
+	if start > end { return "", fmt.Errorf("invalid range") }
+
+	newLines := strings.Split(args["newContent"], "\n")
+	finalLines := append(lines[:start-1], newLines...)
+	if end < len(lines) {
+		finalLines = append(finalLines, lines[end:]...)
+	}
+
+	finalContent := strings.Join(finalLines, "\n")
+	if int64(len(finalContent)) > fsCfg.WriteMaxBytes {
+		return "", fmt.Errorf("content size exceeds write limit")
+	}
+
+	if err := os.WriteFile(resolved, []byte(finalContent), 0644); err != nil {
+		return "", err
+	}
+	return "Range edited successfully", nil
+}
+
+// ---------------------------------------------------------------------------
+// fs_append & fs_prepend
+// ---------------------------------------------------------------------------
+
+func fsAppend(args map[string]string) (string, error) {
+	resolved, err := resolveAndValidate(args["path"])
+	if err != nil { return "", err }
+
+	existing, err := os.ReadFile(resolved)
+	if err != nil && !os.IsNotExist(err) { return "", err }
+
+	finalContent := string(existing)
+	if len(finalContent) > 0 && !strings.HasSuffix(finalContent, "\n") {
+		finalContent += "\n"
+	}
+	finalContent += args["content"]
+
+	if int64(len(finalContent)) > fsCfg.WriteMaxBytes {
+		return "", fmt.Errorf("content size exceeds write limit")
+	}
+	if err := os.WriteFile(resolved, []byte(finalContent), 0644); err != nil {
+		return "", err
+	}
+	return "Appended successfully", nil
+}
+
+func fsPrepend(args map[string]string) (string, error) {
+	resolved, err := resolveAndValidate(args["path"])
+	if err != nil { return "", err }
+
+	existing, err := os.ReadFile(resolved)
+	if err != nil && !os.IsNotExist(err) { return "", err }
+
+	finalContent := args["content"]
+	if len(existing) > 0 {
+		finalContent += "\n" + string(existing)
+	}
+
+	if int64(len(finalContent)) > fsCfg.WriteMaxBytes {
+		return "", fmt.Errorf("content size exceeds write limit")
+	}
+	if err := os.WriteFile(resolved, []byte(finalContent), 0644); err != nil {
+		return "", err
+	}
+	return "Prepended successfully", nil
+}
+
+// ---------------------------------------------------------------------------
+// fs_move
+// ---------------------------------------------------------------------------
+
+func fsMove(args map[string]string) (string, error) {
+	resolvedOld, err := resolveAndValidate(args["path"])
+	if err != nil { return "", err }
+	
+	resolvedNew, err := resolveAndValidate(args["new_path"])
+	if err != nil { return "", err }
+
+	if err := os.MkdirAll(filepath.Dir(resolvedNew), 0755); err != nil {
+		return "", err
+	}
+	if err := os.Rename(resolvedOld, resolvedNew); err != nil {
+		return "", err
+	}
+	return "File moved/renamed successfully", nil
 }
