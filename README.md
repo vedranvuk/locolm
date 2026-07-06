@@ -1,6 +1,6 @@
 # locolm
 
-A local MCP (Model Context Protocol) server that gives your LLM access to tools for web search, web fetching, filesystem operations, persistent memory, and more. locolm runs as a standalone MCP server — connect any MCP client to it.
+AI slopped local MCP (Model Context Protocol) server that gives your LLM access to tools for web search, web fetching, filesystem operations, persistent memory, and more. locolm runs as a standalone MCP server — connect any MCP client to it.
 
 ## What it does
 

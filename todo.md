@@ -1,1 +1,0 @@
-* support more mime tpes (ppt, excel..., csv..json.. textual, all=)
