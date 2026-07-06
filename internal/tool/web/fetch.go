@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"codeberg.org/readeck/go-readability/v2"
-	"github.com/vedranvuk/locolm/internal/mcp"
 	pdf "github.com/ledongthuc/pdf"
+	"github.com/vedranvuk/locolm/internal/mcp"
 	"golang.org/x/net/proxy"
 )
 
@@ -43,7 +43,7 @@ var webFetchCfg = WebFetchConfig{
 func init() {
 	mcp.RegisterTool(
 		"web_fetch",
-		"Fetch and read the content of a web page",
+		"Fetch and read the content of a web page. If using proxy it can fetch .onion addresses.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
