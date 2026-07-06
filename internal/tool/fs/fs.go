@@ -193,12 +193,12 @@ func init() {
 
 	mcp.RegisterTool(
 		"fs_append",
-		"Append content to the end of a file.",
+		"Append exact content to the end of a file. You MUST include '\\n' if you want a new line.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"path": { "type": "string" },
-				"content": { "type": "string" }
+				"content": { "type": "string", "description": "Exact string to append. Include \\n if needed." }
 			},
 			"required": ["path", "content"]
 		}`),
@@ -207,12 +207,12 @@ func init() {
 
 	mcp.RegisterTool(
 		"fs_prepend",
-		"Prepend content to the beginning of a file.",
+		"Prepend exact content to the beginning of a file. You MUST include '\\n' if you want to separate it from existing content.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"path": { "type": "string" },
-				"content": { "type": "string" }
+				"content": { "type": "string", "description": "Exact string to prepend. Include \\n if needed." }
 			},
 			"required": ["path", "content"]
 		}`),
@@ -729,18 +729,28 @@ func buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, ma
 
 func fsEditRange(args map[string]string) (string, error) {
 	resolved, err := resolveAndValidate(args["path"])
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 
 	content, err := os.ReadFile(resolved)
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 
 	lines := strings.Split(string(content), "\n")
 	start, _ := strconv.Atoi(args["startLine"])
 	end, _ := strconv.Atoi(args["endLine"])
 
-	if start < 1 { start = 1 }
-	if end > len(lines) { end = len(lines) }
-	if start > end { return "", fmt.Errorf("invalid range") }
+	if start < 1 {
+		start = 1
+	}
+	if end > len(lines) {
+		end = len(lines)
+	}
+	if start > end {
+		return "", fmt.Errorf("invalid range")
+	}
 
 	newLines := strings.Split(args["newContent"], "\n")
 	finalLines := append(lines[:start-1], newLines...)
@@ -770,11 +780,8 @@ func fsAppend(args map[string]string) (string, error) {
 	existing, err := os.ReadFile(resolved)
 	if err != nil && !os.IsNotExist(err) { return "", err }
 
-	finalContent := string(existing)
-	if len(finalContent) > 0 && !strings.HasSuffix(finalContent, "\n") {
-		finalContent += "\n"
-	}
-	finalContent += args["content"]
+	// Strictly append exact bytes provided
+	finalContent := string(existing) + args["content"]
 
 	if int64(len(finalContent)) > fsCfg.WriteMaxBytes {
 		return "", fmt.Errorf("content size exceeds write limit")
@@ -782,7 +789,7 @@ func fsAppend(args map[string]string) (string, error) {
 	if err := os.WriteFile(resolved, []byte(finalContent), 0644); err != nil {
 		return "", err
 	}
-	return "Appended successfully", nil
+	return "Appended exactly as requested", nil
 }
 
 func fsPrepend(args map[string]string) (string, error) {
@@ -792,10 +799,8 @@ func fsPrepend(args map[string]string) (string, error) {
 	existing, err := os.ReadFile(resolved)
 	if err != nil && !os.IsNotExist(err) { return "", err }
 
-	finalContent := args["content"]
-	if len(existing) > 0 {
-		finalContent += "\n" + string(existing)
-	}
+	// Strictly prepend exact bytes provided
+	finalContent := args["content"] + string(existing)
 
 	if int64(len(finalContent)) > fsCfg.WriteMaxBytes {
 		return "", fmt.Errorf("content size exceeds write limit")
@@ -803,7 +808,7 @@ func fsPrepend(args map[string]string) (string, error) {
 	if err := os.WriteFile(resolved, []byte(finalContent), 0644); err != nil {
 		return "", err
 	}
-	return "Prepended successfully", nil
+	return "Prepended exactly as requested", nil
 }
 
 // ---------------------------------------------------------------------------
@@ -812,10 +817,14 @@ func fsPrepend(args map[string]string) (string, error) {
 
 func fsMove(args map[string]string) (string, error) {
 	resolvedOld, err := resolveAndValidate(args["path"])
-	if err != nil { return "", err }
-	
+	if err != nil {
+		return "", err
+	}
+
 	resolvedNew, err := resolveAndValidate(args["new_path"])
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 
 	if err := os.MkdirAll(filepath.Dir(resolvedNew), 0755); err != nil {
 		return "", err
