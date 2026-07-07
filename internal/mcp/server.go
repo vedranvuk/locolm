@@ -16,20 +16,21 @@ import (
 
 // Server wraps the go-sdk mcp.Server and provides an HTTP handler.
 type Server struct {
-	sdkServer *mcp.Server
+	mcpServer *mcp.Server
 	handler   http.Handler
 }
 
 // New creates a new MCP server. Tools registered via RegisterTool before
 // this call are replayed into the new server.
 func New() *Server {
-	sdkServer := mcp.NewServer(&mcp.Implementation{
+	mcpServer := mcp.NewServer(&mcp.Implementation{
 		Name:    "locolm",
+		Title:   "locolm",
 		Version: "1.0.0",
 	}, nil)
 
 	s := &Server{
-		sdkServer: sdkServer,
+		mcpServer: mcpServer,
 	}
 
 	// Replay any registrations that arrived before the server was created
@@ -54,7 +55,7 @@ func (s *Server) AddTool(name, description string, inputSchema json.RawMessage, 
 		InputSchema: inputSchema,
 	}
 
-	s.sdkServer.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	s.mcpServer.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// Parse arguments from the raw JSON-RPC params
 		args := make(map[string]string)
 		if req.Params.Arguments != nil {
@@ -121,7 +122,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if s.handler == nil {
 		s.handler = mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
-			return s.sdkServer
+			return s.mcpServer
 		}, &mcp.StreamableHTTPOptions{
 			DisableLocalhostProtection: true,
 		})
