@@ -57,7 +57,7 @@ func init() {
 			},
 			"use_proxy": {
 				"type": "boolean",
-				"description": "If true, route the request through the configured TOR proxy. Defaults to true."
+				"description": "If true, route the request through the configured TOR prox."
 			}
 		},
 		"required": ["url"]
@@ -190,11 +190,7 @@ func webFetch(args map[string]string) (string, error) {
 		if useProxy == "true" {
 			proxyURL = cfg.ProxyURL
 		}
-		// "false" → direct connection (proxyURL stays "")
-	} else if cfg.ProxyURL != "" {
-		proxyURL = cfg.ProxyURL
 	}
-
 	client := newHTTPClient(cfg.Timeout, proxyURL)
 
 	resp, err := doRequest(client, pageURL)

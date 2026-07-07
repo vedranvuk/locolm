@@ -46,8 +46,7 @@ func init() {
 
 	// Register tools
 
-
-mcp.RegisterTool(
+	mcp.RegisterTool(
 		"fs_list",
 		"List directory contents. Returns name, size, type, and modification time for each entry.",
 		json.RawMessage(`{
@@ -160,7 +159,7 @@ mcp.RegisterTool(
 		fsFind,
 	)
 
-mcp.RegisterTool(
+	mcp.RegisterTool(
 		"fs_tree",
 		"Display a directory tree structure as indented text.",
 		json.RawMessage(`{
@@ -186,7 +185,7 @@ mcp.RegisterTool(
 		}`),
 		fsTree,
 	)
-	
+
 	mcp.RegisterTool(
 		"fs_replace",
 		"Replace exact literal string or regex pattern in a file. Use this tool to edit source files.",
@@ -813,10 +812,14 @@ func fsReplace(args map[string]string) (string, error) {
 
 func fsAppend(args map[string]string) (string, error) {
 	resolved, err := resolveAndValidate(args["path"])
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 
 	existing, err := os.ReadFile(resolved)
-	if err != nil && !os.IsNotExist(err) { return "", err }
+	if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
 
 	// Strictly append exact bytes provided
 	finalContent := string(existing) + args["content"]
@@ -832,10 +835,14 @@ func fsAppend(args map[string]string) (string, error) {
 
 func fsPrepend(args map[string]string) (string, error) {
 	resolved, err := resolveAndValidate(args["path"])
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 
 	existing, err := os.ReadFile(resolved)
-	if err != nil && !os.IsNotExist(err) { return "", err }
+	if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
 
 	// Strictly prepend exact bytes provided
 	finalContent := args["content"] + string(existing)
