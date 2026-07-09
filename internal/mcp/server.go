@@ -14,6 +14,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+const mcpInstructions = ``
+
 // Server wraps the go-sdk mcp.Server and provides an HTTP handler.
 type Server struct {
 	mcpServer *mcp.Server
@@ -23,11 +25,16 @@ type Server struct {
 // New creates a new MCP server. Tools registered via RegisterTool before
 // this call are replayed into the new server.
 func New() *Server {
-	mcpServer := mcp.NewServer(&mcp.Implementation{
-		Name:    "locolm",
-		Title:   "locolm",
-		Version: "1.0.0",
-	}, nil)
+	mcpServer := mcp.NewServer(
+		&mcp.Implementation{
+			Name:    "locolm",
+			Title:   "locolm",
+			Version: "1.0.0",
+		}, 
+		&mcp.ServerOptions{
+			Instructions: mcpInstructions,	
+		},
+	)
 
 	s := &Server{
 		mcpServer: mcpServer,
