@@ -35,13 +35,15 @@ type Server struct {
 }
 
 func New(config *Config) (*Server, error) {
+	var handler = mcp.New()
 	return &Server{
 		run:    make(chan error, 1),
 		config: config,
 		server: http.Server{
-			Addr: config.Addr,
+			Addr:    config.Addr,
+			Handler: handler,
 		},
-		handler: mcp.New(),
+		handler: handler,
 	}, nil
 }
 
