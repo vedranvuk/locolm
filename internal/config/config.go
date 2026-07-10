@@ -42,12 +42,9 @@ type Config struct {
 	Wolfram  *wolfram.Config  `json:"wolfram,omitzero"`
 }
 
-// Load reads locolm.json, applies GOOGLE_* env overrides, dispatches
-// tool-specific configs to registered loaders, and returns the resolved config.
-// locolm.json is read from the working directory (go run .) or the exe directory.
-func Load() (*Config, error) {
-
-	var cfg = &Config{
+// DefaultConfig returns the default config.
+func DefaultConfig() *Config {
+	return &Config{
 		MCP:      server.DefaultConfig(),
 		Database: database.DefaultConfig(),
 
@@ -64,12 +61,19 @@ func Load() (*Config, error) {
 		Wikidata: wikidata.DefaultConfig(),
 		Wolfram:  wolfram.DefaultConfig(),
 	}
+}
 
+// Load reads locolm.json, applies GOOGLE_* env overrides, dispatches
+// tool-specific configs to registered loaders, and returns the resolved config.
+// locolm.json is read from the working directory (go run .) or the exe directory.
+func Load() (*Config, error) {
+
+	var cfg = DefaultConfig()
 	var data, err = os.ReadFile("locolm.json")
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			log.Println("no config file found, using defaults")
-			return cfg, nil
+			log.Println("no config file found, saving defaults")
+			return cfg, Save(cfg, "locolm.json")
 		}
 		return nil, err
 	}
@@ -79,4 +83,13 @@ func Load() (*Config, error) {
 	log.Println("config loaded.")
 
 	return cfg, nil
+}
+
+// Save saves a config to file.
+func Save(config *Config, filename string) error {
+	var data, err = json.MarshalIndent(config, "", "/t")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filename, data, os.ModePerm)
 }

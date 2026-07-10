@@ -8,13 +8,42 @@
       "args": [
         "build",
         "-o",
-        "${workspaceFolder}/bin/locolm.exe",
+        "${workspaceFolder}/bin/locolm",
         "./cmd/locolm/"
       ],
+      "windows": {
+        "args": [
+          "build",
+          "-o",
+          "${workspaceFolder}/bin/locolm.exe",
+          "./cmd/locolm/"
+        ]
+      },
+      "linux": {
+        "args": [
+          "build",
+          "-o",
+          "${workspaceFolder}/bin/locolm",
+          "./cmd/locolm/"
+        ]
+      },
       "group": {
         "kind": "build",
         "isDefault": true
       },
+      "problemMatcher": [
+        "$go"
+      ]
+    },
+    {
+      "label": "Install locolm",
+      "type": "shell",
+      "dependsOn": "Build locolm",
+      "command": "go",
+      "args": [
+        "install",
+        "./cmd/locolm/"
+      ],
       "problemMatcher": [
         "$go"
       ]
