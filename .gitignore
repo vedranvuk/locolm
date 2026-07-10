@@ -53,5 +53,5 @@ go.work.sum
 bin/*
 
 # sqlite
-*.shm
-*.wal
+*.db-shm
+*.db-wal
