@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -55,6 +56,7 @@ func New() *Handler {
 			return mcpServer
 		},
 		&mcp.StreamableHTTPOptions{
+			Logger:                     slog.Default(),
 			DisableLocalhostProtection: true,
 		},
 	)
