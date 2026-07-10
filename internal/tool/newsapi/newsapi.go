@@ -306,7 +306,8 @@ func fetchAndFormatNews(apiURL string) (string, error) {
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("News Results (%d total, showing %d)\n", newsResp.TotalResults, len(newsResp.Articles)))
-	sb.WriteString(strings.Repeat("─", 60) + "\n")
+	sb.WriteString(strings.Repeat("─", 60))
+	sb.WriteString("\n")
 
 	for i, article := range newsResp.Articles {
 		sb.WriteString(fmt.Sprintf("\n%d. %s\n", i+1, article.Title))
@@ -382,7 +383,8 @@ func newsSourcesTool(args map[string]string) (string, error) {
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("News Sources (%d found)\n", len(srcResp.Sources)))
-	sb.WriteString(strings.Repeat("─", 60) + "\n")
+	sb.WriteString(strings.Repeat("─", 60))
+	sb.WriteString("\n")
 
 	for _, src := range srcResp.Sources {
 		sb.WriteString(fmt.Sprintf("\n• %s (%s)\n", src.Name, src.ID))
