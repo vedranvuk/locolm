@@ -1,4 +1,4 @@
-package exasearch
+package exa
 
 import (
 	"bytes"
@@ -87,20 +87,20 @@ type Config struct {
 
 func DefaultConfig() *Config { return &Config{} }
 
-type ExaSearch struct {
+type Exa struct {
 	config *Config
 }
 
-func New(config *Config) (*ExaSearch, error) {
-	return &ExaSearch{
+func New(config *Config) (*Exa, error) {
+	return &Exa{
 		config: config,
 	}, nil
 }
 
-func (self *ExaSearch) Register(r mcp.Registry) {
+func (self *Exa) Register(r mcp.Registry) {
 	r.RegisterTool(
 		"exa_search",
-		"Search the web using Exa AI - neural search with highlights and synthesized answers.",
+		"Neural web search via Exa AI with highlights and synthesized answers. Best for deep research and structured data.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -120,7 +120,7 @@ func (self *ExaSearch) Register(r mcp.Registry) {
 	)
 }
 
-func (self *ExaSearch) exaSearch(args map[string]string) (string, error) {
+func (self *Exa) exaSearch(args map[string]string) (string, error) {
 	query, ok := args["query"]
 	if !ok || query == "" {
 		return "", fmt.Errorf("missing required argument: query")

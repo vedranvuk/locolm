@@ -1,4 +1,4 @@
-package web
+package fetch
 
 import (
 	"bytes"
@@ -45,11 +45,11 @@ func DefaultConfig() *Config {
 // Tool
 // ---------------------------------------------------------------------------
 
-type WebFetchTool struct {
+type Fetch struct {
 	config *Config
 }
 
-func New(config *Config) (*WebFetchTool, error) {
+func New(config *Config) (*Fetch, error) {
 	if config == nil {
 		config = DefaultConfig()
 	}
@@ -60,15 +60,15 @@ func New(config *Config) (*WebFetchTool, error) {
 		log.Printf("[WEB_FETCH] No proxy configured, connecting directly")
 	}
 
-	return &WebFetchTool{
+	return &Fetch{
 		config: config,
 	}, nil
 }
 
-func (self *WebFetchTool) Register(r mcp.Registry) {
+func (self *Fetch) Register(r mcp.Registry) {
 	r.RegisterTool(
 		"web_fetch",
-		"Fetch and read the content of a web page. If using proxy it can fetch .onion addresses.",
+		"Fetch a web page or PDF and extract readable text. Can reach .onion addresses via the configured proxy.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -139,10 +139,10 @@ var blockedTypes = []string{
 
 func newHTTPClient(timeout time.Duration, proxyURL string) *http.Client {
 	transport := &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout:   timeout,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
+		// Guarded dialer validates the resolved IP at connect time, closing
+		// the DNS-rebinding / TOCTOU gap left by the earlier hostname-only
+		// check in validateURL.
+		DialContext: guardedDialer(timeout),
 	}
 	if proxyURL != "" {
 		proxyURI, err := url.Parse(proxyURL)
@@ -178,7 +178,7 @@ func newHTTPClient(timeout time.Duration, proxyURL string) *http.Client {
 // Public entry point
 // ---------------------------------------------------------------------------
 
-func (self *WebFetchTool) webFetch(args map[string]string) (string, error) {
+func (self *Fetch) webFetch(args map[string]string) (string, error) {
 	pageURL, ok := args["url"]
 	if !ok || pageURL == "" {
 		return "", fmt.Errorf("missing required argument: url")
@@ -369,6 +369,25 @@ func extractTextHTML(body []byte, pageURL *url.URL) (string, error) {
 }
 
 func extractTextPDF(body []byte, _ *url.URL) (string, error) {
+	// The underlying PDF library can panic on malformed/crafted input. Since
+	// this tool fetches untrusted URLs, recover here so a single bad PDF
+	// cannot crash the whole process.
+	var (
+		result string
+		perr   error
+	)
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				perr = fmt.Errorf("PDF parsing panicked (corrupt or unsupported file): %v", r)
+			}
+		}()
+		result, perr = extractTextPDFUnsafe(body)
+	}()
+	return result, perr
+}
+
+func extractTextPDFUnsafe(body []byte) (string, error) {
 	reader := bytes.NewReader(body)
 	pdfReader, err := pdf.NewReader(reader, int64(len(body)))
 	if err != nil {
@@ -436,6 +455,35 @@ var privateIPNetworks = []string{
 	"fe80::/10",
 }
 
+// guardedDialer returns a DialContext that resolves the address itself and
+// rejects private/internal IPs at connect time. This closes the DNS-rebinding
+// and TOCTOU gap: validateURL only checks the hostname at request time, but the
+// actual connection is made here, so the resolved IP is re-validated on every
+// dial (including redirects). Resolution failures fail closed (blocked).
+func guardedDialer(timeout time.Duration) func(ctx context.Context, network, address string) (net.Conn, error) {
+	base := &net.Dialer{
+		Timeout:   timeout,
+		KeepAlive: 30 * time.Second,
+	}
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			// No port (e.g. unix socket) — let the base dialer decide.
+			return base.DialContext(ctx, network, address)
+		}
+		ips, err := net.LookupIP(host)
+		if err != nil {
+			return nil, fmt.Errorf("could not resolve %s: %w", host, err)
+		}
+		for _, ip := range ips {
+			if isPrivateIP(ip) {
+				return nil, fmt.Errorf("dial target %s resolves to a private or internal network address, which is not allowed", host)
+			}
+		}
+		return base.DialContext(ctx, network, net.JoinHostPort(host, port))
+	}
+}
+
 func isPrivateHost(hostname string) bool {
 	if hostname == "" {
 		return false
@@ -447,7 +495,8 @@ func isPrivateHost(hostname string) bool {
 	ips, err := net.LookupIP(hostname)
 	if err != nil {
 		log.Printf("[WEB_FETCH] Warning: could not resolve %s: %v", hostname, err)
-		return false
+		// Fail closed: an unresolvable host is treated as private/blocked.
+		return true
 	}
 	for _, resolved := range ips {
 		if isPrivateIP(resolved) {

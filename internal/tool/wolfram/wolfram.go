@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -41,46 +42,59 @@ func DefaultConfig() *Config {
 // Tool
 // ---------------------------------------------------------------------------
 
-type WolframTool struct {
+type Wolfram struct {
 	config *Config
 }
 
-func New(config *Config) (*WolframTool, error) {
+func New(config *Config) (*Wolfram, error) {
 	if config == nil {
 		config = DefaultConfig()
 	}
 
-	if config.AppID != "" {
-		log.Printf("[WOLFRAM] AppID loaded: %s...", config.AppID[:8])
+	if v := os.Getenv("WOLFRAM_APPID"); v != "" {
+		log.Printf("[WOLFRAM] AppID loaded from WOLFRAM_APPID env: %s...", v[:8])
+	} else if config.AppID != "" {
+		log.Printf("[WOLFRAM] AppID loaded from config: %s...", config.AppID[:8])
+	} else {
+		log.Printf("[WOLFRAM] WOLFRAM_APPID not set — wolfram tools will error on call")
 	}
 
-	return &WolframTool{
+	return &Wolfram{
 		config: config,
 	}, nil
 }
 
-func (self *WolframTool) Register(r mcp.Registry) {
-	if self.config.AppID != "" {
-		self.registerWolframQuery(r)
-		self.registerWolframLLM(r)
-		self.registerWolframShort(r)
-		self.registerWolframImage(r)
-		self.registerWolframRecognize(r)
-	} else {
-		log.Printf("[WOLFRAM] WOLFRAM_APPID not set — wolfram tools NOT registered")
+func (self *Wolfram) Register(r mcp.Registry) {
+	// Tools are always registered. The AppID is read from the WOLFRAM_APPID
+	// environment variable at call time (like the exa/google/newsapi tools),
+	// so the tools work as long as the key is present when invoked.
+	self.registerWolframQuery(r)
+	self.registerWolframLLM(r)
+	self.registerWolframShort(r)
+	self.registerWolframImage(r)
+	self.registerWolframRecognize(r)
+}
+
+// appID returns the Wolfram AppID, preferring the WOLFRAM_APPID environment
+// variable and falling back to the configured value.
+func (self *Wolfram) appID() string {
+	if v := os.Getenv("WOLFRAM_APPID"); v != "" {
+		return v
 	}
+	return self.config.AppID
 }
 
 // ---------------------------------------------------------------------------
 // HTTP client
 // ---------------------------------------------------------------------------
 
-func (self *WolframTool) wolframGet(baseURL string, params url.Values, timeoutSec int) ([]byte, error) {
-	if self.config.AppID == "" {
+func (self *Wolfram) wolframGet(baseURL string, params url.Values, timeoutSec int) ([]byte, error) {
+	appID := self.appID()
+	if appID == "" {
 		return nil, fmt.Errorf("wolfram tools require WOLFRAM_APPID environment variable to be set")
 	}
 
-	params.Set("appid", self.config.AppID)
+	params.Set("appid", appID)
 	fullURL := baseURL + "?" + params.Encode()
 
 	// Log query without AppID for security
@@ -128,12 +142,13 @@ func (self *WolframTool) wolframGet(baseURL string, params url.Values, timeoutSe
 
 // wolframGetImage makes a request to an API that returns raw image bytes.
 // It returns the full URL (which the client can use directly) and the content type.
-func (self *WolframTool) wolframGetImage(baseURL string, params url.Values, timeoutSec int) (string, string, error) {
-	if self.config.AppID == "" {
+func (self *Wolfram) wolframGetImage(baseURL string, params url.Values, timeoutSec int) (string, string, error) {
+	appID := self.appID()
+	if appID == "" {
 		return "", "", fmt.Errorf("wolfram tools require WOLFRAM_APPID environment variable to be set")
 	}
 
-	params.Set("appid", self.config.AppID)
+	params.Set("appid", appID)
 	fullURL := baseURL + "?" + params.Encode()
 
 	// Log query without AppID for security
@@ -194,7 +209,7 @@ type QueryResult struct {
 	XMLName       xml.Name     `xml:"queryresult"`
 	Success       string       `xml:"success,attr"`
 	Error         string       `xml:"error,attr"`
-	NumPods       int          `xml:"numpods,attr"`
+	NumPods       float64      `xml:"numpods,attr"`
 	DataTypes     string       `xml:"datatypes,attr"`
 	Timing        string       `xml:"timing,attr"`
 	TimedOut      string       `xml:"timedout,attr"`

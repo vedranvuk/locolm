@@ -1,4 +1,4 @@
-package gsearch
+package google
 
 import (
 	"encoding/json"
@@ -18,11 +18,13 @@ import (
 // ---------------------------------------------------------------------------
 
 type Config struct {
-	NumResults   int    `json:"num_results"`
-	StartIndex   int    `json:"start_index"`
-	DateRestrict string `json:"date_restrict"`
-	GL           string `json:"gl"`
-	LR           string `json:"lr"`
+	APIKey         string `json:"api_key"`
+	SearchEngineID string `json:"search_engine_id"`
+	NumResults     int    `json:"num_results"`
+	StartIndex     int    `json:"start_index"`
+	DateRestrict   string `json:"date_restrict"`
+	GL             string `json:"gl"`
+	LR             string `json:"lr"`
 }
 
 func DefaultConfig() *Config {
@@ -39,23 +41,23 @@ func DefaultConfig() *Config {
 // Tool
 // ---------------------------------------------------------------------------
 
-type GoogleSearch struct {
+type Google struct {
 	config *Config
 }
 
-func New(config *Config) (*GoogleSearch, error) {
+func New(config *Config) (*Google, error) {
 	if config == nil {
 		config = DefaultConfig()
 	}
-	return &GoogleSearch{
+	return &Google{
 		config: config,
 	}, nil
 }
 
-func (self *GoogleSearch) Register(r mcp.Registry) {
+func (self *Google) Register(r mcp.Registry) {
 	r.RegisterTool(
 		"google_search",
-		"Search the web using Google.",
+		"Web search via Google Custom Search. Returns ranked results with titles, URLs, and snippets. Start here for general queries.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -72,14 +74,21 @@ func (self *GoogleSearch) Register(r mcp.Registry) {
 	)
 }
 
-func (self *GoogleSearch) googleSearch(args map[string]string) (string, error) {
-	if os.Getenv("GOOGLE_API_KEY") == "" || os.Getenv("GOOGLE_CSE_ID") == "" {
-		return "", fmt.Errorf("google_search requires GOOGLE_API_KEY and GOOGLE_CSE_ID environment variables")
-	}
+func (self *Google) googleSearch(args map[string]string) (string, error) {
 
-	params := url.Values{}
-	params.Add("key", os.Getenv("GOOGLE_API_KEY"))
-	params.Add("cx", os.Getenv("GOOGLE_CSE_ID"))
+	var (
+		params         = url.Values{}
+		apiKey         = self.config.APIKey
+		searchEngineId = self.config.SearchEngineID
+	)
+	if v := os.Getenv("GOOGLE_API_KEY"); v != "" {
+		apiKey = v
+	}
+	if v := os.Getenv("GOOGLE_CSE_ID"); v != "" {
+		searchEngineId = v
+	}
+	params.Add("key", apiKey)
+	params.Add("cx", searchEngineId)
 	params.Add("q", args["query"])
 
 	optional := []string{"num", "start", "dateRestrict", "gl", "lr"}

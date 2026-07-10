@@ -42,23 +42,23 @@ func DefaultConfig() *Config {
 // Tool
 // ---------------------------------------------------------------------------
 
-type WikidataTool struct {
+type Wikidata struct {
 	config *Config
 }
 
-func New(config *Config) (*WikidataTool, error) {
+func New(config *Config) (*Wikidata, error) {
 	if config == nil {
 		config = DefaultConfig()
 	}
-	return &WikidataTool{
+	return &Wikidata{
 		config: config,
 	}, nil
 }
 
-func (self *WikidataTool) Register(r mcp.Registry) {
+func (self *Wikidata) Register(r mcp.Registry) {
 	r.RegisterTool(
 		"wikidata_query",
-		"Query Wikidata for structured knowledge about entities, people, places, concepts, and more. Supports three modes: 'entity' (fetch by Q-ID like Q42), 'search' (text search for entities), and 'sparql' (run a SPARQL query for complex data retrieval).",
+		"Query Wikidata structured knowledge. `mode: entity` fetches by Q-ID (e.g. Q42); `mode: search` for text; `mode: sparql` for complex queries. Labels are localized automatically.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -79,7 +79,7 @@ func (self *WikidataTool) Register(r mcp.Registry) {
 // Tool implementation
 // ---------------------------------------------------------------------------
 
-func (self *WikidataTool) wikidataQuery(args map[string]string) (string, error) {
+func (self *Wikidata) wikidataQuery(args map[string]string) (string, error) {
 	mode, ok := args["mode"]
 	if !ok || mode == "" {
 		return "", fmt.Errorf("missing required argument: mode")
@@ -125,7 +125,7 @@ func (self *WikidataTool) wikidataQuery(args map[string]string) (string, error) 
 // HTTP client
 // ---------------------------------------------------------------------------
 
-func (self *WikidataTool) newHTTPClient() *http.Client {
+func (self *Wikidata) newHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: time.Duration(self.config.TimeoutSec) * time.Second,
 	}
@@ -135,7 +135,7 @@ func (self *WikidataTool) newHTTPClient() *http.Client {
 // Entity mode
 // ---------------------------------------------------------------------------
 
-func (self *WikidataTool) queryEntity(idsStr, lang string) (string, error) {
+func (self *Wikidata) queryEntity(idsStr, lang string) (string, error) {
 	// Parse Q-IDs (comma or pipe separated)
 	ids := parseQIDs(idsStr)
 	if len(ids) == 0 {
@@ -443,7 +443,7 @@ func resolveValue(value interface{}, datatype string, lang string) interface{} {
 // Search mode
 // ---------------------------------------------------------------------------
 
-func (self *WikidataTool) searchEntities(search, lang string, limit int) (string, error) {
+func (self *Wikidata) searchEntities(search, lang string, limit int) (string, error) {
 	client := self.newHTTPClient()
 
 	params := url.Values{}
@@ -540,7 +540,7 @@ func normalizeSPARQL(query string) string {
 	return result
 }
 
-func (self *WikidataTool) querySPARQL(query, lang string) (string, error) {
+func (self *Wikidata) querySPARQL(query, lang string) (string, error) {
 	client := self.newHTTPClient()
 
 	// Inject label service if the query uses SELECT and doesn't already have it.

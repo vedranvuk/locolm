@@ -9,16 +9,16 @@ import (
 	"github.com/vedranvuk/locolm/internal/config"
 	"github.com/vedranvuk/locolm/internal/database"
 	"github.com/vedranvuk/locolm/internal/server"
-	"github.com/vedranvuk/locolm/internal/tool/exasearch"
+	"github.com/vedranvuk/locolm/internal/tool/exa"
 	"github.com/vedranvuk/locolm/internal/tool/exec"
+	"github.com/vedranvuk/locolm/internal/tool/fetch"
 	"github.com/vedranvuk/locolm/internal/tool/fs"
+	"github.com/vedranvuk/locolm/internal/tool/google"
 	"github.com/vedranvuk/locolm/internal/tool/gopls"
-	"github.com/vedranvuk/locolm/internal/tool/gsearch"
 	"github.com/vedranvuk/locolm/internal/tool/memory"
 	"github.com/vedranvuk/locolm/internal/tool/newsapi"
 	"github.com/vedranvuk/locolm/internal/tool/rag"
 	"github.com/vedranvuk/locolm/internal/tool/sysinfo"
-	"github.com/vedranvuk/locolm/internal/tool/web"
 	"github.com/vedranvuk/locolm/internal/tool/wikidata"
 	"github.com/vedranvuk/locolm/internal/tool/wolfram"
 )
@@ -40,32 +40,32 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
-	if httpServer, err = server.New(cfg.MCPServer); err != nil {
+	if httpServer, err = server.New(cfg.MCP); err != nil {
 		log.Fatalf("create server: %v", err)
 	}
-	
+
 	if db, err = database.Open(cfg.Database); err != nil {
 		log.Fatalf("initialize database: %v", err)
 	}
 	defer db.Close()
-	
+
 	// Initialize and register tools.
 	{
 		var (
-			exaSearchTool    *exasearch.ExaSearch
-			execTool         *exec.ExecTool
-			fsTool           *fs.FSTool
-			goplsTool        *gopls.Gopls
-			googleSearchTool *gsearch.GoogleSearch
-			memTool          *memory.MemoryTool
-			newsAPITool      *newsapi.NewsAPITool
-			ragTool          *rag.RAGTool
-			sysInfoTool      *sysinfo.SysInfoTool
-			webFetchTool     *web.WebFetchTool
-			wikidataTool     *wikidata.WikidataTool
-			wolframTool      *wolfram.WolframTool
+			exaTool      *exa.Exa
+			execTool     *exec.Exec
+			fsTool       *fs.FS
+			goplsTool    *gopls.Gopls
+			googleTool   *google.Google
+			memoryTool   *memory.Memory
+			newsAPITool  *newsapi.NewsAPI
+			ragTool      *rag.RAG
+			sysInfoTool  *sysinfo.SysInfo
+			fetchTool    *fetch.Fetch
+			wikidataTool *wikidata.Wikidata
+			wolframTool  *wolfram.Wolfram
 		)
-		if exaSearchTool, err = exasearch.New(cfg.ExaSearch); err != nil {
+		if exaTool, err = exa.New(cfg.Exa); err != nil {
 			log.Fatalf("initialize exasearch: %v", err)
 		}
 		if execTool, err = exec.New(cfg.Exec); err != nil {
@@ -77,10 +77,10 @@ func main() {
 		if goplsTool, err = gopls.New(cfg.Gopls); err != nil {
 			log.Fatalf("intialize fs: %v", err)
 		}
-		if googleSearchTool, err = gsearch.New(cfg.GoogleSearch); err != nil {
+		if googleTool, err = google.New(cfg.Google); err != nil {
 			log.Fatalf("initialize gsearch: %v", err)
 		}
-		if memTool, err = memory.New(cfg.Memory, db); err != nil {
+		if memoryTool, err = memory.New(cfg.Memory, db); err != nil {
 			log.Fatalf("initialize memory: %v", err)
 		}
 		if newsAPITool, err = newsapi.New(cfg.NewsAPI); err != nil {
@@ -98,21 +98,21 @@ func main() {
 		if wolframTool, err = wolfram.New(cfg.Wolfram); err != nil {
 			log.Fatalf("initialize wolfram: %v", err)
 		}
-		if webFetchTool, err = web.New(cfg.WebFetch); err != nil {
+		if fetchTool, err = fetch.New(cfg.Fetch); err != nil {
 			log.Fatalf("initialize web fetch: %v", err)
 		}
-		httpServer.RegisterMCPTools(exaSearchTool)
+		httpServer.RegisterMCPTools(exaTool)
 		httpServer.RegisterMCPTools(execTool)
 		httpServer.RegisterMCPTools(fsTool)
 		httpServer.RegisterMCPTools(goplsTool)
-		httpServer.RegisterMCPTools(googleSearchTool)
-		httpServer.RegisterMCPTools(memTool)
+		httpServer.RegisterMCPTools(googleTool)
+		httpServer.RegisterMCPTools(memoryTool)
 		httpServer.RegisterMCPTools(newsAPITool)
 		httpServer.RegisterMCPTools(ragTool)
 		httpServer.RegisterMCPTools(sysInfoTool)
 		httpServer.RegisterMCPTools(wikidataTool)
 		httpServer.RegisterMCPTools(wolframTool)
-		httpServer.RegisterMCPTools(webFetchTool)
+		httpServer.RegisterMCPTools(fetchTool)
 	}
 
 	// Run server.

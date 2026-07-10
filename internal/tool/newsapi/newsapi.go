@@ -56,29 +56,29 @@ type newsSourceResponse struct {
 // ---------------------------------------------------------------------------
 
 type Config struct {
-	// No specific configuration needed for memory tool
+	APIKey string `json:"api_key"`
 }
 
 func DefaultConfig() *Config {
 	return &Config{}
 }
 
-type NewsAPITool struct {
+type NewsAPI struct {
 	config *Config
 }
 
-func New(config *Config) (*NewsAPITool, error) {
-	return &NewsAPITool{
+func New(config *Config) (*NewsAPI, error) {
+	return &NewsAPI{
 		config: config,
 	}, nil
 }
 
 // --- Tool registration ---
-func (self *NewsAPITool) Register(r mcp.Registry) {
+func (self *NewsAPI) Register(r mcp.Registry) {
 
 	r.RegisterTool(
 		"news_search",
-		"Search for news articles or headlines using newsapi.org. Supports two modes: 'everything' (full article search with filters like query, sources, domains, date range, language, sort) and 'headlines' (top/breaking headlines by country, category, or sources). Requires NEWSAPI_API_KEY env var.",
+		"Search news via newsapi.org. `mode: everything` for article search (filters: q, sources, domains, date, language, sort); `mode: headlines` for top stories (filters: country, category, sources). Requires NEWSAPI_API_KEY.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -137,12 +137,12 @@ func (self *NewsAPITool) Register(r mcp.Registry) {
 			},
 			"required": ["mode"]
 		}`),
-		newsSearchTool,
+		self.newsSearchTool,
 	)
 
 	r.RegisterTool(
 		"news_sources",
-		"List available news sources from newsapi.org. Filter by category, language, or country. Requires NEWSAPI_API_KEY env var.",
+		"List available news sources (filter by category, language, country). Use to find source IDs for news_search. Requires NEWSAPI_API_KEY.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -161,34 +161,33 @@ func (self *NewsAPITool) Register(r mcp.Registry) {
 			},
 			"required": []
 		}`),
-		newsSourcesTool,
+		self.newsSourcesTool,
 	)
 }
 
 // --- Tool implementations ---
 
-func newsSearchTool(args map[string]string) (string, error) {
+func (self *NewsAPI) newsSearchTool(args map[string]string) (string, error) {
 	mode, ok := args["mode"]
 	if !ok || mode == "" {
 		return "", fmt.Errorf("missing required argument: mode ('everything' or 'headlines')")
 	}
 
-	if os.Getenv("NEWSAPI_API_KEY") == "" {
-		return "", fmt.Errorf("news_search requires NEWSAPI_API_KEY environment variable to be set")
-	}
-
 	switch mode {
 	case "everything":
-		return searchEverything(args)
+		return self.searchEverything(args)
 	case "headlines":
-		return searchHeadlines(args)
+		return self.searchHeadlines(args)
 	default:
 		return "", fmt.Errorf("invalid mode: %q (must be 'everything' or 'headlines')", mode)
 	}
 }
 
-func searchEverything(args map[string]string) (string, error) {
-	apiKey := os.Getenv("NEWSAPI_API_KEY")
+func (self *NewsAPI) searchEverything(args map[string]string) (string, error) {
+	apiKey := self.config.APIKey
+	if v := os.Getenv("NEWSAPI_API_KEY"); v != "" {
+		apiKey = v
+	}
 
 	params := url.Values{}
 	params.Set("apiKey", apiKey)
@@ -236,8 +235,11 @@ func searchEverything(args map[string]string) (string, error) {
 	return fetchAndFormatNews(apiURL)
 }
 
-func searchHeadlines(args map[string]string) (string, error) {
-	apiKey := os.Getenv("NEWSAPI_API_KEY")
+func (self *NewsAPI) searchHeadlines(args map[string]string) (string, error) {
+	apiKey := self.config.APIKey
+	if v := os.Getenv("NEWSAPI_API_KEY"); v != "" {
+		apiKey = v
+	}
 
 	params := url.Values{}
 	params.Set("apiKey", apiKey)
@@ -329,12 +331,12 @@ func fetchAndFormatNews(apiURL string) (string, error) {
 	return sb.String(), nil
 }
 
-func newsSourcesTool(args map[string]string) (string, error) {
-	if os.Getenv("NEWSAPI_API_KEY") == "" {
-		return "", fmt.Errorf("news_sources requires NEWSAPI_API_KEY environment variable to be set")
+func (self *NewsAPI) newsSourcesTool(args map[string]string) (string, error) {
+	apiKey := self.config.APIKey
+	if v := os.Getenv("NEWSAPI_API_KEY"); v != "" {
+		apiKey = v
 	}
 
-	apiKey := os.Getenv("NEWSAPI_API_KEY")
 	params := url.Values{}
 	params.Set("apiKey", apiKey)
 

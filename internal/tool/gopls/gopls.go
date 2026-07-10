@@ -55,7 +55,7 @@ func (self *Gopls) Register(r mcp.Registry) {
 	// --- LIFECYCLE MANAGEMENT ---
 	r.RegisterTool(
 		"gopls_workspace_activate",
-		"Sets the active Go project context workspace directory.",
+		"Set the active Go workspace (arg `path` = directory containing go.mod). Call this before any other gopls tool.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -72,7 +72,7 @@ func (self *Gopls) Register(r mcp.Registry) {
 	// --- CATEGORY 1: NAVIGATION & DISCOVERY ---
 	r.RegisterTool(
 		"gopls_definition",
-		"Locates the exact declaration position of a Go identifier.",
+		"Jump to the declaration of a Go identifier at the given file/line/character.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -87,7 +87,7 @@ func (self *Gopls) Register(r mcp.Registry) {
 
 	r.RegisterTool(
 		"gopls_references",
-		"Traces and lists all occurrences, call sites, and usages of a specific Go identifier.",
+		"List all usages and call sites of a Go identifier at the given file/line/character.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -102,7 +102,7 @@ func (self *Gopls) Register(r mcp.Registry) {
 
 	r.RegisterTool(
 		"gopls_implementation",
-		"Identifies all concrete Go structs, types, or methods that actively implement a target Go interface.",
+		"Find concrete types/methods that implement a Go interface at the given file/line/character.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -117,7 +117,7 @@ func (self *Gopls) Register(r mcp.Registry) {
 
 	r.RegisterTool(
 		"gopls_symbols",
-		"Performs a Go workspace-wide fuzzy search to look up global Go definitions.",
+		"Workspace-wide fuzzy search for Go symbols (types, funcs, vars) by name.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -131,7 +131,7 @@ func (self *Gopls) Register(r mcp.Registry) {
 	// --- CATEGORY 2: DIAGNOSTICS & REAL-TIME ANALYSIS ---
 	r.RegisterTool(
 		"gopls_diagnostics",
-		"Extracts real-time Go compiler diagnostics.",
+		"Report live compiler errors/warnings for a file (or the whole workspace if `file` is omitted).",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -144,7 +144,7 @@ func (self *Gopls) Register(r mcp.Registry) {
 	// --- CATEGORY 3: SMART CODE ASSISTANCE ---
 	r.RegisterTool(
 		"gopls_completion",
-		"Generates context-aware Go code intelligence completions.",
+		"Suggest code completions at the given file/line/character.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -160,7 +160,7 @@ func (self *Gopls) Register(r mcp.Registry) {
 	// --- CATEGORY 4: TRANSFORMATIONS & REFACTORING ---
 	r.RegisterTool(
 		"gopls_rename",
-		"Executes an automated, structurally safe refactoring rename of a Go identifier.",
+		"Rename a Go identifier across the whole workspace (safe, struct-aware). Provide `new_name`.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -177,7 +177,7 @@ func (self *Gopls) Register(r mcp.Registry) {
 	// --- CATEGORY 5: ECOSYSTEM SUPPORT ---
 	r.RegisterTool(
 		"gopls_format",
-		"Calculates native gofmt spacing layouts and automatically evaluates import blocks.",
+		"Format a Go file (gofmt) and organize its imports. Returns the formatted result.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {

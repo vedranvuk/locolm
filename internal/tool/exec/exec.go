@@ -6,6 +6,7 @@ import (
 	"log"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"time"
 
 	"github.com/vedranvuk/locolm/internal/mcp"
@@ -28,8 +29,9 @@ type Config struct {
 
 func DefaultConfig() *Config {
 	return &Config{
-		TimeoutSec:     30,
-		MaxOutputBytes: 102400, // 100 KB
+		AllowedCommands: []string{"*"},
+		TimeoutSec:      30,
+		MaxOutputBytes:  102400, // 100 KB
 	}
 }
 
@@ -37,21 +39,21 @@ func DefaultConfig() *Config {
 // Tool
 // ---------------------------------------------------------------------------
 
-type ExecTool struct {
-	config *Config
+type Exec struct {
+	config          *Config
 	allowedPatterns []*regexp.Regexp
 }
 
-func New(config *Config) (*ExecTool, error) {
+func New(config *Config) (*Exec, error) {
 	if config == nil {
 		config = DefaultConfig()
 	}
-	tool := &ExecTool{config: config}
+	tool := &Exec{config: config}
 	tool.compilePatterns()
 	return tool, nil
 }
 
-func (self *ExecTool) compilePatterns() {
+func (self *Exec) compilePatterns() {
 	self.allowedPatterns = nil
 	for _, pattern := range self.config.AllowedCommands {
 		re, err := regexp.Compile(pattern)
@@ -65,10 +67,10 @@ func (self *ExecTool) compilePatterns() {
 		self.config.TimeoutSec, self.config.MaxOutputBytes, len(self.allowedPatterns))
 }
 
-func (self *ExecTool) Register(r mcp.Registry) {
+func (self *Exec) Register(r mcp.Registry) {
 	r.RegisterTool(
 		"fs_run",
-		"Execute a command and capture its output. Runs via cmd /C on Windows. Commands may be restricted by the allowed_commands config.",
+		"Execute a shell command and return stdout/stderr/exit code. Sandboxed and may be restricted by config. Use only when necessary.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -91,7 +93,7 @@ func (self *ExecTool) Register(r mcp.Registry) {
 // Security check
 // ---------------------------------------------------------------------------
 
-func (self *ExecTool) isCommandAllowed(command string) bool {
+func (self *Exec) isCommandAllowed(command string) bool {
 	if len(self.allowedPatterns) == 0 {
 		return true // no restrictions
 	}
@@ -107,7 +109,7 @@ func (self *ExecTool) isCommandAllowed(command string) bool {
 // fs_run
 // ---------------------------------------------------------------------------
 
-func (self *ExecTool) runCommand(args map[string]string) (string, error) {
+func (self *Exec) runCommand(args map[string]string) (string, error) {
 	command := args["command"]
 	if command == "" {
 		return "", fmt.Errorf("command is required")
@@ -124,7 +126,12 @@ func (self *ExecTool) runCommand(args map[string]string) (string, error) {
 		}
 	}
 
-	cmd := exec.Command("cmd", "/C", command)
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd", "/C", command)
+	} else {
+		cmd = exec.Command("sh", "-c", command)
+	}
 
 	done := make(chan error, 1)
 	var stdout, stderr []byte
@@ -158,7 +165,7 @@ func (self *ExecTool) runCommand(args map[string]string) (string, error) {
 	}
 }
 
-func (self *ExecTool) formatOutput(exitCode int, stdout, stderr []byte, timedOut bool) string {
+func (self *Exec) formatOutput(exitCode int, stdout, stderr []byte, timedOut bool) string {
 	maxOut := self.config.MaxOutputBytes
 	if len(stdout) > maxOut {
 		stdout = stdout[:maxOut]

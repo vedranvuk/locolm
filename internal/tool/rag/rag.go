@@ -22,11 +22,14 @@ type Config struct {
 	// No specific configuration needed for rag tool
 	// Embedding model dimensions can be configured here if needed
 	EmbeddingDimensions int `json:"embedding_dimensions"`
+	// EmbeddingEndpoint is the openai compatible endpoint running an embeddings model.
+	EmbeddingEndpoint string `json:"embedding_endpoint"`
 }
 
 func DefaultConfig() *Config {
 	return &Config{
 		EmbeddingDimensions: 768, // Default for nomic-embed-text-v1.5
+		EmbeddingEndpoint:   "http://192.168.1.100:11502",
 	}
 }
 
@@ -34,13 +37,13 @@ func DefaultConfig() *Config {
 // Tool
 // ---------------------------------------------------------------------------
 
-type RAGTool struct {
+type RAG struct {
 	config *Config
 	db     *sql.DB
 	client *client.Client
 }
 
-func New(config *Config, db *sql.DB) (*RAGTool, error) {
+func New(config *Config, db *sql.DB) (*RAG, error) {
 	if db == nil {
 		return nil, errors.New("rag: db is nil")
 	}
@@ -48,22 +51,27 @@ func New(config *Config, db *sql.DB) (*RAGTool, error) {
 		config = DefaultConfig()
 	}
 
+	var err error
 	// Initialize tables for payload and vectors
-	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS memory_payload (id INTEGER PRIMARY KEY, content TEXT NOT NULL)`)
-	_, _ = db.Exec(`CREATE VIRTUAL TABLE IF NOT EXISTS vec_items USING vec0(id INTEGER PRIMARY KEY, embedding float[?])`, config.EmbeddingDimensions)
+	if _, err = db.Exec(`CREATE TABLE IF NOT EXISTS memory_payload (id INTEGER PRIMARY KEY, content TEXT NOT NULL)`); err != nil {
+		return nil, fmt.Errorf("rag: create memory table: %v", err)
+	}
+	if _, err = db.Exec(fmt.Sprintf(`CREATE VIRTUAL TABLE IF NOT EXISTS vec_items USING vec0(id INTEGER PRIMARY KEY, embedding float[%d])`, config.EmbeddingDimensions)); err != nil {
+		return nil, fmt.Errorf("rag: create vector table: %v", err)
+	}
 
-	return &RAGTool{
+	return &RAG{
 		config: config,
 		db:     db,
-		client: client.New("http://127.0.0.1:11502"),
+		client: client.New(config.EmbeddingEndpoint),
 	}, nil
 }
 
-func (self *RAGTool) Register(r mcp.Registry) {
+func (self *RAG) Register(r mcp.Registry) {
 
 	r.RegisterTool(
 		"remember_semantic",
-		"Write context to local embedded vector database for semantic search.",
+		"Store text in the local vector database for later semantic (meaning-based) retrieval.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -76,7 +84,7 @@ func (self *RAGTool) Register(r mcp.Registry) {
 
 	r.RegisterTool(
 		"recall_semantic",
-		"Semantic search memory via L2 distance.",
+		"Semantic search over stored memories. Returns texts closest in meaning to `query`.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -89,7 +97,7 @@ func (self *RAGTool) Register(r mcp.Registry) {
 
 	r.RegisterTool(
 		"forget_semantic",
-		"Deletes an exact memory string from the semantic database to remove outdated context.",
+		"Delete an exact stored text from the semantic database to remove outdated context.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -101,7 +109,7 @@ func (self *RAGTool) Register(r mcp.Registry) {
 	)
 }
 
-func (self *RAGTool) fetchEmbedding(text string) ([]float32, error) {
+func (self *RAG) fetchEmbedding(text string) ([]float32, error) {
 	// Context can be passed down from the MCP handler if mcp-go supports it,
 	// otherwise Background is sufficient for local synchronous tool execution.
 	// Note: Requires a model with embedding support (e.g., nomic-embed-text, all-minilm)
@@ -116,7 +124,7 @@ func (self *RAGTool) fetchEmbedding(text string) ([]float32, error) {
 	return resp.Data[0].Embedding, nil
 }
 
-func (self *RAGTool) rememberSemantic(args map[string]string) (string, error) {
+func (self *RAG) rememberSemantic(args map[string]string) (string, error) {
 	text := args["text"]
 	emb, err := self.fetchEmbedding(text)
 	if err != nil {
@@ -133,7 +141,11 @@ func (self *RAGTool) rememberSemantic(args map[string]string) (string, error) {
 		tx.Rollback()
 		return "", fmt.Errorf("failed to insert payload: %v", err)
 	}
-	id, _ := res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		tx.Rollback()
+		return "", fmt.Errorf("failed to get last insert id: %v", err)
+	}
 
 	embJSON, err := json.Marshal(emb)
 	if err != nil {
@@ -153,7 +165,7 @@ func (self *RAGTool) rememberSemantic(args map[string]string) (string, error) {
 	return "Stored in sqlite-vec.", nil
 }
 
-func (self *RAGTool) recallSemantic(args map[string]string) (string, error) {
+func (self *RAG) recallSemantic(args map[string]string) (string, error) {
 	query := args["query"]
 	emb, err := self.fetchEmbedding(query)
 	if err != nil {
@@ -182,8 +194,13 @@ func (self *RAGTool) recallSemantic(args map[string]string) (string, error) {
 	var out []string
 	for rows.Next() {
 		var c string
-		_ = rows.Scan(&c)
+		if err := rows.Scan(&c); err != nil {
+			return "", fmt.Errorf("failed to scan memory: %v", err)
+		}
 		out = append(out, "- "+c)
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("failed to iterate memories: %v", err)
 	}
 
 	if len(out) == 0 {
@@ -192,14 +209,17 @@ func (self *RAGTool) recallSemantic(args map[string]string) (string, error) {
 	return "Semantic Matches:\n" + strings.Join(out, "\n"), nil
 }
 
-func (self *RAGTool) forgetSemantic(args map[string]string) (string, error) {
+func (self *RAG) forgetSemantic(args map[string]string) (string, error) {
 	text := args["text"]
 
-	tx, _ := self.db.Begin()
+	tx, err := self.db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("failed to begin transaction: %v", err)
+	}
 	defer tx.Rollback()
 
 	var id int64
-	err := tx.QueryRow("SELECT id FROM memory_payload WHERE content = ?", text).Scan(&id)
+	err = tx.QueryRow("SELECT id FROM memory_payload WHERE content = ?", text).Scan(&id)
 	if err == sql.ErrNoRows {
 		return "Memory not found. Nothing to delete.", nil
 	}
@@ -208,12 +228,23 @@ func (self *RAGTool) forgetSemantic(args map[string]string) (string, error) {
 	}
 
 	// Delete from both the standard table and the sqlite-vec virtual table
-	res, _ := tx.Exec("DELETE FROM memory_payload WHERE id = ?", id)
-	rowsAffected, _ := res.RowsAffected()
-
-	if rowsAffected > 0 {
-		_, _ = tx.Exec("DELETE FROM vec_items WHERE id = ?", id)
+	res, err := tx.Exec("DELETE FROM memory_payload WHERE id = ?", id)
+	if err != nil {
+		return "", fmt.Errorf("failed to delete payload: %v", err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return "", fmt.Errorf("failed to get rows affected: %v", err)
 	}
 
-	return "Memory successfully forgotten.", tx.Commit()
+	if rowsAffected > 0 {
+		if _, err := tx.Exec("DELETE FROM vec_items WHERE id = ?", id); err != nil {
+			return "", fmt.Errorf("failed to delete vector: %v", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("failed to commit transaction: %v", err)
+	}
+	return "Memory successfully forgotten.", nil
 }

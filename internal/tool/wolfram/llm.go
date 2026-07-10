@@ -8,10 +8,10 @@ import (
 	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
-func (self *WolframTool) registerWolframLLM(r mcp.Registry) {
+func (self *Wolfram) registerWolframLLM(r mcp.Registry) {
 	r.RegisterTool(
 		"wolfram_llm",
-		"Query Wolfram Alpha and get results optimized for LLM consumption. Returns structured text tables, image URLs, and a link to the full results page. This is the recommended tool for most queries.",
+		"Query Wolfram Alpha with LLM-optimized output (structured text, tables, image links). Recommended for most computational questions.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -21,7 +21,7 @@ func (self *WolframTool) registerWolframLLM(r mcp.Registry) {
 				},
 				"maxchars": {
 					"type": "string",
-					"description": "Maximum characters in response (default 6800). Increase for complex queries, decrease for simple ones."
+					"description": "Maximum characters in the response (Wolfram default if omitted). Increase for complex queries, decrease for simple ones."
 				},
 				"location": {
 					"type": "string",
@@ -43,7 +43,7 @@ func (self *WolframTool) registerWolframLLM(r mcp.Registry) {
 	)
 }
 
-func (self *WolframTool) wolframLLM(args map[string]string) (string, error) {
+func (self *Wolfram) wolframLLM(args map[string]string) (string, error) {
 	input, ok := args["input"]
 	if !ok || input == "" {
 		return "", fmt.Errorf("missing required argument: input")

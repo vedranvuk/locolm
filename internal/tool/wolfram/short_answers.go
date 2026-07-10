@@ -9,10 +9,10 @@ import (
 	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
-func (self *WolframTool) registerWolframShort(r mcp.Registry) {
+func (self *Wolfram) registerWolframShort(r mcp.Registry) {
 	r.RegisterTool(
 		"wolfram_short",
-		"Query Wolfram Alpha for a short textual answer. Optimized for rapid responses and simple factual queries. Returns a single short string.",
+		"Get a single short factual answer from Wolfram Alpha (e.g. 'capital of France', 'boiling point of water').",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -27,7 +27,7 @@ func (self *WolframTool) registerWolframShort(r mcp.Registry) {
 	)
 }
 
-func (self *WolframTool) wolframShort(args map[string]string) (string, error) {
+func (self *Wolfram) wolframShort(args map[string]string) (string, error) {
 	input, ok := args["input"]
 	if !ok || input == "" {
 		return "", fmt.Errorf("missing required argument: input")

@@ -45,26 +45,23 @@ func DefaultConfig() *Config {
 // Tool
 // ---------------------------------------------------------------------------
 
-type FSTool struct {
+type FS struct {
 	config *Config
 }
 
-func New(config *Config) (*FSTool, error) {
+func New(config *Config) (*FS, error) {
 	if config == nil {
 		config = DefaultConfig()
 	}
-	tool := &FSTool{config: config}
-	log.Printf("[FS] Config loaded: allowed_paths=%v, read_max=%d, write_max=%d, find_max=%d, tree_depth=%d",
-		tool.config.AllowedPaths, tool.config.ReadMaxBytes, tool.config.WriteMaxBytes, tool.config.FindMaxResults, tool.config.TreeMaxDepth)
-	return tool, nil
+	return &FS{config: config}, nil
 }
 
-func (self *FSTool) Register(r mcp.Registry) {
+func (self *FS) Register(r mcp.Registry) {
 	// Register tools
 
 	r.RegisterTool(
 		"fs_list",
-		"List directory contents. Returns name, size, type, and modification time for each entry.",
+		"List a directory's entries with name, size, type, and modification time. Use this to explore before reading or writing.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -93,7 +90,7 @@ func (self *FSTool) Register(r mcp.Registry) {
 
 	r.RegisterTool(
 		"fs_read",
-		"Read a text file's content.",
+		"Read a file. Use `offset` (1-based line) and `limit` (max lines) to read portions of large files.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -117,7 +114,7 @@ func (self *FSTool) Register(r mcp.Registry) {
 
 	r.RegisterTool(
 		"fs_write",
-		"Create or overwrite a file with text content.",
+		"Create or overwrite a file with text. Parent directory must already exist. Max 1 MB per write.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -137,7 +134,7 @@ func (self *FSTool) Register(r mcp.Registry) {
 
 	r.RegisterTool(
 		"fs_delete",
-		"Delete a single file. Cannot delete directories.",
+		"Delete a single file (not directories).",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -153,7 +150,7 @@ func (self *FSTool) Register(r mcp.Registry) {
 
 	r.RegisterTool(
 		"fs_find",
-		"Find files by name pattern (glob). Returns matching file paths.",
+		"Find files by glob pattern (e.g. '*.go', '**/*.json'). Returns matching relative paths.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -177,7 +174,7 @@ func (self *FSTool) Register(r mcp.Registry) {
 
 	r.RegisterTool(
 		"fs_tree",
-		"Display a directory tree structure as indented text.",
+		"Render a directory as an indented tree. Use `depth` to limit levels and `exclude` to skip dirs (e.g. 'node_modules,.git').",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -187,7 +184,7 @@ func (self *FSTool) Register(r mcp.Registry) {
 				},
 				"depth": {
 					"type": "string",
-					"description": "Maximum depth to traverse. Defaults to (3)."
+					"description": "Maximum depth to traverse. Defaults to 3."
 				},
 				"exclude": {
 					"type": "string",
@@ -204,7 +201,7 @@ func (self *FSTool) Register(r mcp.Registry) {
 
 	r.RegisterTool(
 		"fs_replace",
-		"Replace exact literal string or regex pattern in a file. Use this tool to edit source files.",
+		"Replace text in a file. `old_content` is matched literally by default, or as a regex if `is_regex` is 'true'. Replaces the first match.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -220,7 +217,7 @@ func (self *FSTool) Register(r mcp.Registry) {
 
 	r.RegisterTool(
 		"fs_append",
-		"Append exact content to the end of a file. Escape special characters (Go syntax).",
+		"Append text to the end of a file. Include '\\n' for newlines.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -234,7 +231,7 @@ func (self *FSTool) Register(r mcp.Registry) {
 
 	r.RegisterTool(
 		"fs_prepend",
-		"Prepend exact content to the beginning of a file. Escape special characters (Go syntax).",
+		"Prepend text to the beginning of a file. Include '\\n' for newlines.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -248,7 +245,7 @@ func (self *FSTool) Register(r mcp.Registry) {
 
 	r.RegisterTool(
 		"fs_move",
-		"Move or rename a file. Creates parent directories if missing.",
+		"Move or rename a file (args `path` -> `new_path`). Creates parent directories if needed.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -269,7 +266,7 @@ func (self *FSTool) Register(r mcp.Registry) {
 // it falls within one of the configured allowed base directories.
 // Returns the cleaned absolute path or an error.
 // Resolves symlinks to prevent sandbox escape.
-func (self *FSTool) resolveAndValidate(inputPath string) (string, error) {
+func (self *FS) resolveAndValidate(inputPath string) (string, error) {
 	if inputPath == "" {
 		inputPath = "."
 	}
@@ -347,7 +344,7 @@ type listEntry struct {
 	Modified string `json:"modified"`
 }
 
-func (self *FSTool) fsList(args map[string]string) (string, error) {
+func (self *FS) fsList(args map[string]string) (string, error) {
 	dirPath := args["path"]
 	if dirPath == "" {
 		dirPath = "."
@@ -419,7 +416,7 @@ func (self *FSTool) fsList(args map[string]string) (string, error) {
 // fs_read
 // ---------------------------------------------------------------------------
 
-func (self *FSTool) fsRead(args map[string]string) (string, error) {
+func (self *FS) fsRead(args map[string]string) (string, error) {
 	filePath := args["path"]
 	if filePath == "" {
 		return "", fmt.Errorf("path is required")
@@ -491,7 +488,7 @@ func (self *FSTool) fsRead(args map[string]string) (string, error) {
 // fs_write
 // ---------------------------------------------------------------------------
 
-func (self *FSTool) fsWrite(args map[string]string) (string, error) {
+func (self *FS) fsWrite(args map[string]string) (string, error) {
 	filePath := args["path"]
 	content := args["content"]
 
@@ -526,7 +523,7 @@ func (self *FSTool) fsWrite(args map[string]string) (string, error) {
 // fs_delete
 // ---------------------------------------------------------------------------
 
-func (self *FSTool) fsDelete(args map[string]string) (string, error) {
+func (self *FS) fsDelete(args map[string]string) (string, error) {
 	filePath := args["path"]
 	if filePath == "" {
 		return "", fmt.Errorf("path is required")
@@ -557,7 +554,7 @@ func (self *FSTool) fsDelete(args map[string]string) (string, error) {
 // fs_find
 // ---------------------------------------------------------------------------
 
-func (self *FSTool) fsFind(args map[string]string) (string, error) {
+func (self *FS) fsFind(args map[string]string) (string, error) {
 	pattern := args["pattern"]
 	if pattern == "" {
 		return "", fmt.Errorf("pattern is required")
@@ -659,7 +656,7 @@ func (self *FSTool) fsFind(args map[string]string) (string, error) {
 // fs_tree
 // ---------------------------------------------------------------------------
 
-func (self *FSTool) fsTree(args map[string]string) (string, error) {
+func (self *FS) fsTree(args map[string]string) (string, error) {
 	basePath := args["path"]
 	if basePath == "" {
 		basePath = "."
@@ -706,7 +703,7 @@ func isHidden(name string) bool {
 	return strings.HasPrefix(name, ".")
 }
 
-func (self *FSTool) buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, maxDepth int, excludeSet map[string]bool, remaining *int, showHidden bool) {
+func (self *FS) buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, maxDepth int, excludeSet map[string]bool, remaining *int, showHidden bool) {
 	if depth >= maxDepth || *remaining <= 0 {
 		return
 	}
@@ -766,7 +763,7 @@ func (self *FSTool) buildTree(sb *strings.Builder, dirPath string, prefix string
 // fs_replace
 // ---------------------------------------------------------------------------
 
-func (self *FSTool) fsReplace(args map[string]string) (string, error) {
+func (self *FS) fsReplace(args map[string]string) (string, error) {
 	resolved, err := self.resolveAndValidate(args["path"])
 	if err != nil {
 		return "", err
@@ -811,7 +808,7 @@ func (self *FSTool) fsReplace(args map[string]string) (string, error) {
 // fs_append & fs_prepend
 // ---------------------------------------------------------------------------
 
-func (self *FSTool) fsAppend(args map[string]string) (string, error) {
+func (self *FS) fsAppend(args map[string]string) (string, error) {
 	resolved, err := self.resolveAndValidate(args["path"])
 	if err != nil {
 		return "", err
@@ -834,7 +831,7 @@ func (self *FSTool) fsAppend(args map[string]string) (string, error) {
 	return "Appended exactly as requested", nil
 }
 
-func (self *FSTool) fsPrepend(args map[string]string) (string, error) {
+func (self *FS) fsPrepend(args map[string]string) (string, error) {
 	resolved, err := self.resolveAndValidate(args["path"])
 	if err != nil {
 		return "", err
@@ -861,7 +858,7 @@ func (self *FSTool) fsPrepend(args map[string]string) (string, error) {
 // fs_move
 // ---------------------------------------------------------------------------
 
-func (self *FSTool) fsMove(args map[string]string) (string, error) {
+func (self *FS) fsMove(args map[string]string) (string, error) {
 	resolvedOld, err := self.resolveAndValidate(args["path"])
 	if err != nil {
 		return "", err

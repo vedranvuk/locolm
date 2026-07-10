@@ -8,16 +8,16 @@ import (
 
 	"github.com/vedranvuk/locolm/internal/database"
 	"github.com/vedranvuk/locolm/internal/server"
-	"github.com/vedranvuk/locolm/internal/tool/exasearch"
+	"github.com/vedranvuk/locolm/internal/tool/exa"
 	"github.com/vedranvuk/locolm/internal/tool/exec"
+	"github.com/vedranvuk/locolm/internal/tool/fetch"
 	"github.com/vedranvuk/locolm/internal/tool/fs"
+	"github.com/vedranvuk/locolm/internal/tool/google"
 	"github.com/vedranvuk/locolm/internal/tool/gopls"
-	"github.com/vedranvuk/locolm/internal/tool/gsearch"
 	"github.com/vedranvuk/locolm/internal/tool/memory"
 	"github.com/vedranvuk/locolm/internal/tool/newsapi"
 	"github.com/vedranvuk/locolm/internal/tool/rag"
 	"github.com/vedranvuk/locolm/internal/tool/sysinfo"
-	"github.com/vedranvuk/locolm/internal/tool/web"
 	"github.com/vedranvuk/locolm/internal/tool/wikidata"
 	"github.com/vedranvuk/locolm/internal/tool/wolfram"
 )
@@ -25,21 +25,21 @@ import (
 // Config holds all locolm configuration. Loaded from locolm.json with
 // GOOGLE_* / EXA_* env overrides for third-party credentials.
 type Config struct {
-	MCPServer *server.Config   `json:"mcp_server"`
-	Database  *database.Config `json:"database"`
+	MCP      *server.Config   `json:"mcp"`
+	Database *database.Config `json:"database"`
 
-	ExaSearch    *exasearch.Config `json:"exa_search"`
-	Exec         *exec.Config      `json:"exec,omitempty"`
-	FS           *fs.Config        `json:"fs,omitempty"`
-	Gopls        *gopls.Config     `json:"gopls"`
-	GoogleSearch *gsearch.Config   `json:"google_search"`
-	Memory       *memory.Config    `json:"memory"`
-	NewsAPI      *newsapi.Config   `json:"newsapi"`
-	RAG          *rag.Config       `json:"rag"`
-	SysInfo      *sysinfo.Config   `json:"sysinfo"`
-	WebFetch     *web.Config       `json:"web_fetch,omitempty"`
-	Wikidata     *wikidata.Config  `json:"wikidata"`
-	Wolfram      *wolfram.Config   `json:"wolfram"`
+	Exa      *exa.Config      `json:"exa,omitzero"`
+	Exec     *exec.Config     `json:"exec,omitzero"`
+	FS       *fs.Config       `json:"fs,omitzero"`
+	Gopls    *gopls.Config    `json:"gopls,omitzero"`
+	Google   *google.Config   `json:"google,omitzero"`
+	Memory   *memory.Config   `json:"memory,omitzero"`
+	NewsAPI  *newsapi.Config  `json:"newsapi,omitzero"`
+	RAG      *rag.Config      `json:"rag,omitzero"`
+	SysInfo  *sysinfo.Config  `json:"sysinfo,omitzero"`
+	Fetch    *fetch.Config    `json:"fetch,omitzero"`
+	Wikidata *wikidata.Config `json:"wikidata,omitzero"`
+	Wolfram  *wolfram.Config  `json:"wolfram,omitzero"`
 }
 
 // Load reads locolm.json, applies GOOGLE_* env overrides, dispatches
@@ -48,21 +48,21 @@ type Config struct {
 func Load() (*Config, error) {
 
 	var cfg = &Config{
-		MCPServer: server.DefaultConfig(),
-		Database:  database.DefaultConfig(),
+		MCP:      server.DefaultConfig(),
+		Database: database.DefaultConfig(),
 
-		ExaSearch:    exasearch.DefaultConfig(),
-		Exec:         exec.DefaultConfig(),
-		FS:           fs.DefaultConfig(),
-		Gopls:        gopls.DefaultConfig(),
-		GoogleSearch: gsearch.DefaultConfig(),
-		Memory:       memory.DefaultConfig(),
-		NewsAPI:      newsapi.DefaultConfig(),
-		RAG:          rag.DefaultConfig(),
-		SysInfo:      sysinfo.DefaultConfig(),
-		WebFetch:     web.DefaultConfig(),
-		Wikidata:     wikidata.DefaultConfig(),
-		Wolfram:      wolfram.DefaultConfig(),
+		Exa:      exa.DefaultConfig(),
+		Exec:     exec.DefaultConfig(),
+		Fetch:    fetch.DefaultConfig(),
+		FS:       fs.DefaultConfig(),
+		Gopls:    gopls.DefaultConfig(),
+		Google:   google.DefaultConfig(),
+		Memory:   memory.DefaultConfig(),
+		NewsAPI:  newsapi.DefaultConfig(),
+		RAG:      rag.DefaultConfig(),
+		SysInfo:  sysinfo.DefaultConfig(),
+		Wikidata: wikidata.DefaultConfig(),
+		Wolfram:  wolfram.DefaultConfig(),
 	}
 
 	var data, err = os.ReadFile("locolm.json")

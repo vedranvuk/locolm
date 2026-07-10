@@ -9,10 +9,10 @@ import (
 	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
-func (self *WolframTool) registerWolframImage(r mcp.Registry) {
+func (self *Wolfram) registerWolframImage(r mcp.Registry) {
 	r.RegisterTool(
 		"wolfram_image",
-		"Query Wolfram Alpha and get a rendered image of the full result page. Returns a Markdown image link showing the visual Wolfram Alpha output.",
+		"Get a rendered image of the full Wolfram Alpha result page as a Markdown link.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -56,7 +56,7 @@ func (self *WolframTool) registerWolframImage(r mcp.Registry) {
 	)
 }
 
-func (self *WolframTool) wolframImage(args map[string]string) (string, error) {
+func (self *Wolfram) wolframImage(args map[string]string) (string, error) {
 	input, ok := args["input"]
 	if !ok || input == "" {
 		return "", fmt.Errorf("missing required argument: input")

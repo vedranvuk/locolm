@@ -10,10 +10,10 @@ import (
 	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
-func (self *WolframTool) registerWolframRecognize(r mcp.Registry) {
+func (self *Wolfram) registerWolframRecognize(r mcp.Registry) {
 	r.RegisterTool(
 		"wolfram_recognize",
-		"Quickly classify a query and check if Wolfram Alpha can handle it. Runs in under 10ms. Useful for triage before making a full query.",
+		"Check whether Wolfram Alpha can compute a query (triage before a full query). May be unavailable on some API tiers.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -28,7 +28,7 @@ func (self *WolframTool) registerWolframRecognize(r mcp.Registry) {
 	)
 }
 
-func (self *WolframTool) wolframRecognize(args map[string]string) (string, error) {
+func (self *Wolfram) wolframRecognize(args map[string]string) (string, error) {
 	input, ok := args["input"]
 	if !ok || input == "" {
 		return "", fmt.Errorf("missing required argument: input")

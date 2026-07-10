@@ -10,10 +10,10 @@ import (
 	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
-func (self *WolframTool) registerWolframQuery(r mcp.Registry) {
+func (self *Wolfram) registerWolframQuery(r mcp.Registry) {
 	r.RegisterTool(
 		"wolfram_query",
-		"Query Wolfram Alpha for computational knowledge, math, science, data, and more. Returns structured results with pod-level granularity. Supports pod selection, location override, unit system, and output format control.",
+		"Full Wolfram Alpha results with pod-level detail (math, science, conversions, data). Supports pod filtering, units, and location override.",
 		json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -60,7 +60,7 @@ func (self *WolframTool) registerWolframQuery(r mcp.Registry) {
 				},
 				"timeout": {
 					"type": "string",
-					"description": "Max seconds for the query (default 20). Increase for heavy computations like large integrals or complex data queries."
+					"description": "Max seconds for the query (default 30). Increase for heavy computations like large integrals or complex data queries."
 				},
 				"assumption": {
 					"type": "string",
@@ -73,7 +73,7 @@ func (self *WolframTool) registerWolframQuery(r mcp.Registry) {
 	)
 }
 
-func (self *WolframTool) wolframQuery(args map[string]string) (string, error) {
+func (self *Wolfram) wolframQuery(args map[string]string) (string, error) {
 	input, ok := args["input"]
 	if !ok || input == "" {
 		return "", fmt.Errorf("missing required argument: input")
@@ -154,7 +154,7 @@ func (self *WolframTool) wolframQuery(args map[string]string) (string, error) {
 	if result.Timing != "" {
 		fmt.Fprintf(&sb, "Timing: %ss\n", result.Timing)
 	}
-	fmt.Fprintf(&sb, "Pods: %d\n\n", result.NumPods)
+	fmt.Fprintf(&sb, "Pods: %.0f\n\n", result.NumPods)
 
 	for _, pod := range result.Pods {
 		if pod.Error == "true" {
