@@ -1,6 +1,6 @@
 # Binary
-locolm.exe
-locolm
+cmd/locolm/locolm.exe
+cmd/locolm/locolm
 
 # Database
 *.db
