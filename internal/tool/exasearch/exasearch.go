@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/vedranvuk/locolm/internal/mcp"
@@ -115,13 +116,11 @@ func (self *ExaSearch) Register(r mcp.Registry) {
 			},
 			"required": ["query"]
 		}`),
-		exaSearch,
+		self.exaSearch,
 	)
 }
 
-// --- Exa Search implementation ---
-
-func exaSearch(args map[string]string) (string, error) {
+func (self *ExaSearch) exaSearch(args map[string]string) (string, error) {
 	query, ok := args["query"]
 	if !ok || query == "" {
 		return "", fmt.Errorf("missing required argument: query")
@@ -236,7 +235,7 @@ func exaSearch(args map[string]string) (string, error) {
 		results = append(results, entry)
 	}
 
-	output := fmt.Sprintf("Found %d results (cost: $%.4f):\n\n%s", len(searchResp.Results), searchResp.Cost.Total, joinStrings(results, "\n\n"))
+	output := fmt.Sprintf("Found %d results (cost: $%.4f):\n\n%s", len(searchResp.Results), searchResp.Cost.Total, strings.Join(results, "\n\n"))
 
 	// Include synthesized output if present
 	if searchResp.Output != nil && searchResp.Output.Content != nil {
@@ -249,51 +248,13 @@ func exaSearch(args map[string]string) (string, error) {
 	return output, nil
 }
 
-// --- String helpers ---
-
 func splitAndTrim(s string) []string {
 	var result []string
-	for _, part := range splitString(s, ",") {
-		trimmed := trimSpace(part)
+	for _, part := range strings.Split(s, ",") {
+		trimmed := strings.TrimSpace(part)
 		if trimmed != "" {
 			result = append(result, trimmed)
 		}
-	}
-	return result
-}
-
-func splitString(s, sep string) []string {
-	var result []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == sep[0] {
-			result = append(result, s[start:i])
-			start = i + 1
-		}
-	}
-	result = append(result, s[start:])
-	return result
-}
-
-func trimSpace(s string) string {
-	start := 0
-	end := len(s)
-	for start < end && (s[start] == ' ' || s[start] == '\t') {
-		start++
-	}
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
-		end--
-	}
-	return s[start:end]
-}
-
-func joinStrings(strs []string, sep string) string {
-	if len(strs) == 0 {
-		return ""
-	}
-	result := strs[0]
-	for i := 1; i < len(strs); i++ {
-		result += sep + strs[i]
 	}
 	return result
 }

@@ -43,6 +43,7 @@ func main() {
 	if httpServer, err = server.New(cfg.MCPServer); err != nil {
 		log.Fatalf("create server: %v", err)
 	}
+	
 	if db, err = database.Open(cfg.Database); err != nil {
 		log.Fatalf("initialize database: %v", err)
 	}
