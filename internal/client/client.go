@@ -243,6 +243,9 @@ func (c *Client) CreateEmbedding(ctx context.Context, input string, model string
 	req := &EmbeddingRequest{
 		Input: input,
 		Model: model,
+		Options: &EmbeddingOptions{
+			PoolingType: "mean",
+		},
 	}
 
 	body, err := json.Marshal(req)
@@ -328,10 +331,16 @@ type Usage struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
+// EmbeddingOptions represents embedding request options
+type EmbeddingOptions struct {
+	PoolingType string `json:"pooling_type,omitempty"`
+}
+
 // EmbeddingRequest represents a request to the llama-server embeddings endpoint
 type EmbeddingRequest struct {
-	Input string `json:"input"`
-	Model string `json:"model,omitempty"`
+	Input    string            `json:"input"`
+	Model    string            `json:"model,omitempty"`
+	Options  *EmbeddingOptions `json:"options,omitempty"`
 }
 
 // EmbeddingResponse represents the response from llama-server

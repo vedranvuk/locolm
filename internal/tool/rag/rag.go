@@ -71,6 +71,8 @@ func init() {
 func fetchEmbedding(text string) ([]float32, error) {
 	// Context can be passed down from the MCP handler if mcp-go supports it, 
 	// otherwise Background is sufficient for local synchronous tool execution.
+	// Note: Requires a model with embedding support (e.g., nomic-embed-text, all-minilm)
+	// The model must be started with --pooling mean (or cls, last, rank)
 	return llamaClient.CreateEmbedding(context.Background(), text, "nomic-embed-text-v1.5")
 }
 
@@ -78,29 +80,60 @@ func rememberSemantic(args map[string]string) (string, error) {
 	text := args["text"]
 	emb, err := fetchEmbedding(text)
 	if err != nil {
+		// Check if the error is about pooling type (model doesn't support embeddings)
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "Pooling type") || strings.Contains(errMsg, "embedding") {
+			return fmt.Sprintf("RAG not available: The current llama-server model does not support embeddings.\n\nTo enable semantic memory:\n1. Download an embedding model (e.g., nomic-embed-text, all-minilm-384-v2)\n2. Start a second llama-server instance with the embedding model:\n   llama-server -m <path-to-embedding-model> --pooling mean --port 11501\n3. Update the llamaClient URL in this file to point to the embedding server (http://127.0.0.1:11501)\n\nExample command:\n   D:\\Develop\\llama-cpp\\llama-server.exe -m e:\\Models\\GGUF\\nomic-embed-text-gguf.gguf --pooling mean --host 0.0.0.0 --port 11501", errMsg), nil
+		}
 		return "", fmt.Errorf("embedding failed: %v", err)
 	}
 
-	tx, _ := db.Begin()
-	defer tx.Rollback()
+	tx, err := db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("failed to begin transaction: %v", err)
+	}
 
-	res, _ := tx.Exec("INSERT INTO memory_payload (content) VALUES (?)", text)
+	res, err := tx.Exec("INSERT INTO memory_payload (content) VALUES (?)", text)
+	if err != nil {
+		tx.Rollback()
+		return "", fmt.Errorf("failed to insert payload: %v", err)
+	}
 	id, _ := res.LastInsertId()
 
-	embJSON, _ := json.Marshal(emb)
-	_, _ = tx.Exec(fmt.Sprintf("INSERT INTO vec_items (id, embedding) VALUES (?, vec_f32('%s'))", string(embJSON)), id)
+	embJSON, err := json.Marshal(emb)
+	if err != nil {
+		tx.Rollback()
+		return "", fmt.Errorf("failed to marshal embedding: %v", err)
+	}
+	_, err = tx.Exec(fmt.Sprintf("INSERT INTO vec_items (id, embedding) VALUES (?, vec_f32('%s'))", string(embJSON)), id)
+	if err != nil {
+		tx.Rollback()
+		return "", fmt.Errorf("failed to insert vector: %v", err)
+	}
 
-	return "Stored in sqlite-vec.", tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("failed to commit transaction: %v", err)
+	}
+
+	return "Stored in sqlite-vec.", nil
 }
 
 func recallSemantic(args map[string]string) (string, error) {
 	query := args["query"]
 	emb, err := fetchEmbedding(query)
 	if err != nil {
+		// Check if the error is about pooling type (model doesn't support embeddings)
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "Pooling type") || strings.Contains(errMsg, "embedding") {
+			return fmt.Sprintf("RAG not available: The current llama-server model does not support embeddings.\n\nTo enable semantic memory:\n1. Download an embedding model (e.g., nomic-embed-text, all-minilm-384-v2)\n2. Start a second llama-server instance with the embedding model:\n   llama-server -m <path-to-embedding-model> --pooling mean --port 11501\n3. Update the llamaClient URL in this file to point to the embedding server (http://127.0.0.1:11501)\n\nExample command:\n   D:\\Develop\\llama-cpp\\llama-server.exe -m e:\\Models\\GGUF\\nomic-embed-text-gguf.gguf --pooling mean --host 0.0.0.0 --port 11501", errMsg), nil
+		}
 		return "", fmt.Errorf("embedding failed: %v", err)
 	}
 
-	embJSON, _ := json.Marshal(emb)
+	embJSON, err := json.Marshal(emb)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal embedding: %v", err)
+	}
 
 	queryStr := fmt.Sprintf(`
 		SELECT p.content 
@@ -110,7 +143,10 @@ func recallSemantic(args map[string]string) (string, error) {
 		LIMIT 3;
 	`, string(embJSON))
 
-	rows, _ := db.Query(queryStr)
+	rows, err := db.Query(queryStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to query vectors: %v", err)
+	}
 	defer rows.Close()
 
 	var out []string 
