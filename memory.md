@@ -23,3 +23,7 @@
 ## Conventions
 - Keep option helpers type-safe (operate on concrete `*XxxRequest`), not `any`.
 - Errors from non-2xx responses are returned as `*client.Error{Status, Body}`.
+
+## MCP configuration
+- Workspace MCP config is stored in [.vscode/mcp.json](.vscode/mcp.json).
+- The gopls MCP server is configured to use the existing TCP/SSE listener at http://127.0.0.1:8092/mcp.

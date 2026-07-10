@@ -21,6 +21,12 @@ var instructions string
 // MCPHandler is a MCP handler function prototype.
 type HandlerFunc func(map[string]string) (string, error)
 
+// Tool defines a MCP tool.
+type Tool interface {
+	// Register allows MCP tools to register themselves with the MCP server.
+	Register(Registry)
+}
+
 // Registry is an interface to MCP tool registry.
 type Registry interface {
 	RegisterTool(name, description string, inputSchema json.RawMessage, handler HandlerFunc)
@@ -147,6 +153,11 @@ func (self *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // C:\\temp, D:\\root). Converting these would corrupt paths. Tool-specific
 // normalization (e.g. SPARQL query handling) is done after JSON parsing in
 // the respective tool handlers, where semantic context is available.
+//
+// A malformed escape (a backslash immediately followed by a raw control
+// character, e.g. "\" + newline) is also normalized: the control character is
+// escaped rather than copied verbatim, so the result remains valid JSON
+// instead of failing to parse.
 func sanitizeRawJSON(raw []byte) []byte {
 	var buf strings.Builder
 	buf.Grow(len(raw))
@@ -157,11 +168,18 @@ func sanitizeRawJSON(raw []byte) []byte {
 
 		if inString {
 			if c == '\\' {
-				// Escape sequence: copy the backslash and the next character
+				// Escape sequence: copy the backslash. If the next byte is a
+				// control character (a malformed escape), escape that control
+				// character instead of copying it raw.
 				buf.WriteByte(c)
 				if i+1 < len(raw) {
+					next := raw[i+1]
 					i++
-					buf.WriteByte(raw[i])
+					if next < 0x20 {
+						writeEscaped(&buf, next)
+					} else {
+						buf.WriteByte(next)
+					}
 				}
 				continue
 			}
@@ -172,24 +190,11 @@ func sanitizeRawJSON(raw []byte) []byte {
 				continue
 			}
 			// Inside a string: replace control characters
-			switch c {
-			case '\n':
-				buf.WriteString(`\n`)
-			case '\r':
-				buf.WriteString(`\r`)
-			case '\t':
-				buf.WriteString(`\t`)
-			case '\b':
-				buf.WriteString(`\b`)
-			case '\f':
-				buf.WriteString(`\f`)
-			default:
-				if c < 0x20 {
-					buf.WriteString(fmt.Sprintf(`\u%04x`, c))
-				} else {
-					buf.WriteByte(c)
-				}
+			if c < 0x20 {
+				writeEscaped(&buf, c)
+				continue
 			}
+			buf.WriteByte(c)
 		} else {
 			if c == '"' {
 				inString = true
@@ -199,4 +204,22 @@ func sanitizeRawJSON(raw []byte) []byte {
 	}
 
 	return []byte(buf.String())
+}
+
+// writeEscaped writes the JSON escape sequence for a control character.
+func writeEscaped(buf *strings.Builder, c byte) {
+	switch c {
+	case '\n':
+		buf.WriteString(`\n`)
+	case '\r':
+		buf.WriteString(`\r`)
+	case '\t':
+		buf.WriteString(`\t`)
+	case '\b':
+		buf.WriteString(`\b`)
+	case '\f':
+		buf.WriteString(`\f`)
+	default:
+		buf.WriteString(fmt.Sprintf(`\u%04x`, c))
+	}
 }

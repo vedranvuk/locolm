@@ -2,17 +2,10 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"github.com/vedranvuk/locolm/internal/mcp"
 )
-
-// MCPTOol defines a MCP tool.
-type MCPTool interface {
-	// Register allows MCP tools to register themselves with the MCP server.
-	Register(mcp.Registry)
-}
 
 type Config struct {
 	Addr        string
@@ -28,10 +21,10 @@ func DefaultConfig() *Config {
 }
 
 type Server struct {
-	run     chan error
-	config  *Config
-	server  http.Server
-	handler *mcp.Handler
+	run        chan error
+	config     *Config
+	httpServer http.Server
+	mcpHandler *mcp.Handler
 }
 
 func New(config *Config) (*Server, error) {
@@ -39,19 +32,19 @@ func New(config *Config) (*Server, error) {
 	return &Server{
 		run:    make(chan error, 1),
 		config: config,
-		server: http.Server{
+		httpServer: http.Server{
 			Addr:    config.Addr,
 			Handler: handler,
 		},
-		handler: handler,
+		mcpHandler: handler,
 	}, nil
 }
 
 func (self *Server) Run() (err error) {
 	if self.config.TLS {
-		err = self.server.ListenAndServeTLS(self.config.TLSCertFile, self.config.TLSKeyFile)
+		err = self.httpServer.ListenAndServeTLS(self.config.TLSCertFile, self.config.TLSKeyFile)
 	} else {
-		err = self.server.ListenAndServe()
+		err = self.httpServer.ListenAndServe()
 
 	}
 	if err == http.ErrServerClosed {
@@ -60,14 +53,10 @@ func (self *Server) Run() (err error) {
 	return
 }
 
-func (self *Server) Stop() error { return self.server.Shutdown(context.Background()) }
+func (self *Server) Stop() error { return self.httpServer.Shutdown(context.Background()) }
 
-func (self *Server) RegisterTool(name, description string, inputSchema json.RawMessage, handler mcp.HandlerFunc) {
-	self.handler.RegisterTool(name, description, inputSchema, handler)
-}
-
-func (self *Server) RegisterMCPTools(tools ...MCPTool) {
+func (self *Server) RegisterMCPTools(tools ...mcp.Tool) {
 	for _, tool := range tools {
-		tool.Register(self)
+		tool.Register(self.mcpHandler)
 	}
 }
