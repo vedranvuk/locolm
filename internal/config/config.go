@@ -21,10 +21,10 @@ type Config struct {
 	Gopls    json.RawMessage `json:"gopls,omitempty"` // <-- Add this line
 }
 
-// LoadConfig reads locolm.json, applies GOOGLE_* env overrides, dispatches
+// Load reads locolm.json, applies GOOGLE_* env overrides, dispatches
 // tool-specific configs to registered loaders, and returns the resolved config.
 // locolm.json is read from the working directory (go run .) or the exe directory.
-func LoadConfig() Config {
+func Load() Config {
 	cfg := Config{}
 
 	wd, _ := os.Getwd()

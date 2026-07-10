@@ -19,6 +19,7 @@ import (
 	// Blank imports: trigger init() in each tool package, which registers
 	// its tools via mcp.RegisterTool (replayed into the server in main).
 	_ "github.com/vedranvuk/locolm/internal/tool/memory"
+	_ "github.com/vedranvuk/locolm/internal/tool/rag"
 	_ "github.com/vedranvuk/locolm/internal/tool/newsapi"
 	_ "github.com/vedranvuk/locolm/internal/tool/search"
 	_ "github.com/vedranvuk/locolm/internal/tool/sysinfo"
@@ -28,7 +29,7 @@ import (
 
 func main() {
 	// Load config from locolm.json + GOOGLE_* env overrides
-	cfg := config.LoadConfig()
+	cfg := config.Load()
 
 	// Load tool-specific configs
 	web.LoadWebFetchConfig(cfg.WebFetch)
