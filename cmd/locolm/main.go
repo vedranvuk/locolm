@@ -46,7 +46,8 @@ func main() {
 	if db, err = database.Open(cfg.Database); err != nil {
 		log.Fatalf("initialize database: %v", err)
 	}
-
+	defer db.Close()
+	
 	// Initialize and register tools.
 	{
 		var (

@@ -2,6 +2,8 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
+	"log"
 	"os"
 
 	"github.com/vedranvuk/locolm/internal/database"
@@ -65,11 +67,16 @@ func Load() (*Config, error) {
 
 	var data, err = os.ReadFile("locolm.json")
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			log.Println("no config file found, using defaults")
+			return cfg, nil
+		}
 		return nil, err
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
+	log.Println("config loaded.")
 
 	return cfg, nil
 }
