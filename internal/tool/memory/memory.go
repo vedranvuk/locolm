@@ -21,7 +21,7 @@ func init() {
 	if err != nil {
 		exePath = "."
 	}
-	dbPath := filepath.Join(filepath.Dir(exePath), "locolm.db")
+	dbPath := filepath.Join(filepath.Dir(exePath), "locolm_mem.db")
 
 	db, err = sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)")
 	if err != nil {

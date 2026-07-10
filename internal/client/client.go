@@ -1,3 +1,4 @@
+// Package client implements a llama-server client.
 package client
 
 import (
@@ -10,61 +11,15 @@ import (
 	"time"
 )
 
-// LlamaServerClient handles communication with llama-server API
-type LlamaServerClient struct {
+// Client handles communication with llama-server API.
+type Client struct {
 	baseURL string
 	client  *http.Client
 }
 
-// ChatRequest represents a request to the llama-server chat endpoint
-type ChatRequest struct {
-	Messages    []Message `json:"messages"`
-	Model       string    `json:"model,omitempty"`
-	Temperature float64   `json:"temperature,omitempty"`
-	MaxTokens   int       `json:"max_tokens,omitempty"`
-	TopP        float64   `json:"top_p,omitempty"`
-	Stream      bool      `json:"stream,omitempty"`
-}
-
-// Message represents a chat message
-type Message struct {
-	Role    string `json:"role"`    // "system", "user", "assistant"
-	Content string `json:"content"`
-}
-
-// ChatResponse represents the response from llama-server
-type ChatResponse struct {
-	ID                string      `json:"id"`
-	Created           int64       `json:"created"`
-	Model             string      `json:"model"`
-	Choices           []Choice    `json:"choices"`
-	Usage             Usage       `json:"usage"`
-	SystemFingerprint string      `json:"system_fingerprint"`
-}
-
-// Choice represents a choice in the response
-type Choice struct {
-	Index   int         `json:"index"`
-	Message ChatMessage `json:"message"`
-	FinishReason string    `json:"finish_reason"`
-}
-
-// ChatMessage represents a message in the response
-type ChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-// Usage represents token usage statistics
-type Usage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
-}
-
-// NewLlamaServerClient creates a new client for llama-server
-func NewLlamaServerClient(baseURL string) *LlamaServerClient {
-	return &LlamaServerClient{
+// New creates a new client for llama-server
+func New(baseURL string) *Client {
+	return &Client{
 		baseURL: baseURL,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
@@ -73,7 +28,7 @@ func NewLlamaServerClient(baseURL string) *LlamaServerClient {
 }
 
 // Chat sends a chat request to the llama-server
-func (c *LlamaServerClient) Chat(ctx context.Context, messages []Message, opts ...func(*ChatRequest)) (*ChatResponse, error) {
+func (c *Client) Chat(ctx context.Context, messages []Message, opts ...func(*ChatRequest)) (*ChatResponse, error) {
 	req := &ChatRequest{
 		Messages: messages,
 		Stream:   false,
@@ -133,8 +88,29 @@ func (c *LlamaServerClient) Chat(ctx context.Context, messages []Message, opts .
 	return &chatResp, nil
 }
 
+// WithTemperature sets the temperature for chat requests
+func WithTemperature(temp float64) func(*ChatRequest) {
+	return func(r *ChatRequest) {
+		r.Temperature = temp
+	}
+}
+
+// WithMaxTokens sets the max tokens for chat requests
+func WithMaxTokens(max int) func(*ChatRequest) {
+	return func(r *ChatRequest) {
+		r.MaxTokens = max
+	}
+}
+
+// WithTopP sets the top_p for chat requests
+func WithTopP(topP float64) func(*ChatRequest) {
+	return func(r *ChatRequest) {
+		r.TopP = topP
+	}
+}
+
 // ChatStream sends a streaming chat request to the llama-server
-func (c *LlamaServerClient) ChatStream(ctx context.Context, messages []Message, opts ...func(*ChatRequest)) (io.ReadCloser, error) {
+func (c *Client) ChatStream(ctx context.Context, messages []Message, opts ...func(*ChatRequest)) (io.ReadCloser, error) {
 	req := &ChatRequest{
 		Messages: messages,
 		Stream:   true,
@@ -191,7 +167,7 @@ func (c *LlamaServerClient) ChatStream(ctx context.Context, messages []Message, 
 }
 
 // GetModelList retrieves the list of available models
-func (c *LlamaServerClient) GetModelList(ctx context.Context) ([]string, error) {
+func (c *Client) GetModelList(ctx context.Context) ([]string, error) {
 	url := c.baseURL + "/v1/models"
 
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -211,8 +187,8 @@ func (c *LlamaServerClient) GetModelList(ctx context.Context) ([]string, error) 
 	}
 
 	var modelsResp struct {
-		Object string   `json:"object"`
-		Data   []Model  `json:"data"`
+		Object string  `json:"object"`
+		Data   []Model `json:"data"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {
@@ -229,9 +205,9 @@ func (c *LlamaServerClient) GetModelList(ctx context.Context) ([]string, error) 
 
 // Model represents a model in the model list
 type Model struct {
-	ID    string `json:"id"`
-	Object string `json:"object"`
-	Owned string `json:"owned_by"`
+	ID      string       `json:"id"`
+	Object  string       `json:"object"`
+	Owned   string       `json:"owned_by"`
 	Details ModelDetails `json:"details,omitempty"`
 }
 
@@ -241,7 +217,7 @@ type ModelDetails struct {
 }
 
 // HealthCheck performs a health check on the llama-server
-func (c *LlamaServerClient) HealthCheck(ctx context.Context) error {
+func (c *Client) HealthCheck(ctx context.Context) error {
 	url := c.baseURL + "/health"
 
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -262,23 +238,113 @@ func (c *LlamaServerClient) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-// WithTemperature sets the temperature for chat requests
-func WithTemperature(temp float64) func(*ChatRequest) {
-	return func(r *ChatRequest) {
-		r.Temperature = temp
+// CreateEmbedding sends a text input to the embeddings endpoint and returns the float32 vector
+func (c *Client) CreateEmbedding(ctx context.Context, input string, model string) ([]float32, error) {
+	req := &EmbeddingRequest{
+		Input: input,
+		Model: model,
 	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal embedding request: %w", err)
+	}
+
+	url := c.baseURL + "/v1/embeddings"
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create embedding request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json")
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send embedding request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("llama-server embedding error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var embedResp EmbeddingResponse
+	if err := json.NewDecoder(resp.Body).Decode(&embedResp); err != nil {
+		return nil, fmt.Errorf("failed to decode embedding response: %w", err)
+	}
+
+	if len(embedResp.Data) == 0 {
+		return nil, fmt.Errorf("llama-server returned empty embedding data")
+	}
+
+	return embedResp.Data[0].Embedding, nil
 }
 
-// WithMaxTokens sets the max tokens for chat requests
-func WithMaxTokens(max int) func(*ChatRequest) {
-	return func(r *ChatRequest) {
-		r.MaxTokens = max
-	}
+// ChatRequest represents a request to the llama-server chat endpoint
+type ChatRequest struct {
+	Messages    []Message `json:"messages"`
+	Model       string    `json:"model,omitempty"`
+	Temperature float64   `json:"temperature,omitempty"`
+	MaxTokens   int       `json:"max_tokens,omitempty"`
+	TopP        float64   `json:"top_p,omitempty"`
+	Stream      bool      `json:"stream,omitempty"`
 }
 
-// WithTopP sets the top_p for chat requests
-func WithTopP(topP float64) func(*ChatRequest) {
-	return func(r *ChatRequest) {
-		r.TopP = topP
-	}
+// Message represents a chat message
+type Message struct {
+	Role    string `json:"role"` // "system", "user", "assistant"
+	Content string `json:"content"`
+}
+
+// ChatResponse represents the response from llama-server
+type ChatResponse struct {
+	ID                string   `json:"id"`
+	Created           int64    `json:"created"`
+	Model             string   `json:"model"`
+	Choices           []Choice `json:"choices"`
+	Usage             Usage    `json:"usage"`
+	SystemFingerprint string   `json:"system_fingerprint"`
+}
+
+// Choice represents a choice in the response
+type Choice struct {
+	Index        int         `json:"index"`
+	Message      ChatMessage `json:"message"`
+	FinishReason string      `json:"finish_reason"`
+}
+
+// ChatMessage represents a message in the response
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// Usage represents token usage statistics
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+// EmbeddingRequest represents a request to the llama-server embeddings endpoint
+type EmbeddingRequest struct {
+	Input string `json:"input"`
+	Model string `json:"model,omitempty"`
+}
+
+// EmbeddingResponse represents the response from llama-server
+type EmbeddingResponse struct {
+	Object string      `json:"object"`
+	Data   []Embedding `json:"data"`
+	Model  string      `json:"model"`
+	Usage  Usage       `json:"usage"`
+}
+
+// Embedding represents a single embedding vector
+type Embedding struct {
+	Object    string    `json:"object"`
+	Embedding []float32 `json:"embedding"`
+	Index     int       `json:"index"`
 }
