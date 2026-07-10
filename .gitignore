@@ -51,3 +51,7 @@ go.work.sum
 
 # bin dir
 bin/*
+
+# sqlite
+*.shm
+*.wal

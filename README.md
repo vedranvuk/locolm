@@ -1,10 +1,8 @@
 # locolm
 
-AI slopped local MCP with some basic tools for agenticks.
+Local MCP server exposing tools for web fetch/search, filesystem ops, command execution, memory, and integrations (Wikidata, Wolfram, NewsAPI, etc.) for agents.
 
-## Quick start
-
-Build and run:
+## Build & run
 
 ```powershell
 Stop-Process -Name "locolm" -Force -ErrorAction SilentlyContinue
@@ -12,13 +10,11 @@ go build -o bin/locolm.exe ./cmd/locolm/
 cd bin; .\locolm.exe
 ```
 
-The MCP server listens on http://127.0.0.1:11501 by default. Point your MCP client there.
-
-Note: On Windows you must stop any running `locolm.exe` before rebuilding (cannot overwrite a running exe).
+MCP server listens on `http://127.0.0.1:11501` (Streamable HTTP, `/mcp`). On Windows, stop the running exe before rebuilding.
 
 ## Configuration
 
-Settings live in `locolm.json` next to the executable (or in the project root when using `go run`). A typical snippet:
+`locolm.json` sits next to the executable (or project root with `go run`):
 
 ```json
 {
@@ -28,23 +24,20 @@ Settings live in `locolm.json` next to the executable (or in the project root wh
 }
 ```
 
-Third-party API keys are provided via environment variables:
+API keys via environment variables (tools needing them fail gracefully if unset):
 
-- `GOOGLE_API_KEY`, `GOOGLE_CSE_ID` (Google Custom Search)
-- `EXA_API_KEY` (Exa AI search)
-- `NEWSAPI_API_KEY` (NewsAPI.org)
-- `WOLFRAM_APPID` (Wolfram Alpha)
+- `GOOGLE_API_KEY`, `GOOGLE_CSE_ID` — Google Custom Search
+- `EXA_API_KEY` — Exa search
+- `NEWSAPI_API_KEY` — NewsAPI.org
+- `WOLFRAM_APPID` — Wolfram Alpha (tools unregistered if unset)
 
 ## Data files
 
-Files are stored next to the executable (`bin/` when built):
+Stored next to the executable (`bin/` when built): `locolm.json` (config), `locolm.db` (memory DB).
 
-- `locolm.json` — configuration
-- `locolm.db` — memory DB
+## Tools
 
-## Tools (high level)
-
-The server exposes a set of tools for web fetch, searches, filesystem operations, command execution (allowlisted), memory, and integrations (Wikidata, Wolfram, NewsAPI, etc.). Use the `/tools/list` endpoint to see the current set.
+List current tools via the MCP `tools/list` endpoint.
 
 ## License
 
