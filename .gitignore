@@ -37,9 +37,6 @@ desktop.ini
 .env
 .env.local
 
-# Project memory
-memory.md
-
 # Local config
 locolm.json
 

@@ -1,4 +1,11 @@
-// Package client implements a llama-server client.
+// Package client implements a complete client for the llama-server HTTP API.
+//
+// All methods follow a uniform calling convention:
+//   - Required inputs are positional arguments.
+//   - Every optional input is supplied through functional options of the form
+//     func(*XxxRequest), created with the With<Param> helpers.
+//   - Cross-cutting request options (model selection) and client configuration
+//     (HTTP client, timeout, API key) are also provided as functional options.
 package client
 
 import (
@@ -8,352 +15,195 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 )
 
-// Client handles communication with llama-server API.
+// Client handles communication with the llama-server API.
 type Client struct {
-	baseURL string
-	client  *http.Client
+	baseURL      string
+	httpClient   *http.Client
+	apiKey       string
+	extraHeaders map[string]string
 }
 
-// New creates a new client for llama-server
-func New(baseURL string) *Client {
-	return &Client{
-		baseURL: baseURL,
-		client: &http.Client{
+// ClientOption configures a Client at construction time.
+type ClientOption func(*Client)
+
+// WithHTTPClient sets a custom *http.Client.
+func WithHTTPClient(c *http.Client) ClientOption {
+	return func(cl *Client) { cl.httpClient = c }
+}
+
+// WithTimeout sets the default request timeout.
+func WithTimeout(d time.Duration) ClientOption {
+	return func(cl *Client) { cl.httpClient.Timeout = d }
+}
+
+// WithAPIKey sets the Bearer API key sent with every request.
+func WithAPIKey(key string) ClientOption {
+	return func(cl *Client) { cl.apiKey = key }
+}
+
+// WithHeader sets a default header sent with every request.
+func WithHeader(key, value string) ClientOption {
+	return func(cl *Client) {
+		if cl.extraHeaders == nil {
+			cl.extraHeaders = make(map[string]string)
+		}
+		cl.extraHeaders[key] = value
+	}
+}
+
+// New creates a new llama-server client. baseURL should include the scheme and
+// host (e.g. "http://127.0.0.1:8080"); a trailing slash is optional.
+func New(baseURL string, opts ...ClientOption) *Client {
+	cl := &Client{
+		baseURL: strings.TrimRight(baseURL, "/"),
+		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
-}
-
-// Chat sends a chat request to the llama-server
-func (c *Client) Chat(ctx context.Context, messages []Message, opts ...func(*ChatRequest)) (*ChatResponse, error) {
-	req := &ChatRequest{
-		Messages: messages,
-		Stream:   false,
-	}
-
-	// Apply optional parameters
 	for _, opt := range opts {
-		opt(req)
+		opt(cl)
+	}
+	return cl
+}
+
+// do builds, sends and returns an HTTP request. The caller is responsible for
+// closing the response body.
+func (c *Client) do(ctx context.Context, method, path string, query url.Values, body any, headers map[string]string) (*http.Response, error) {
+	var reader io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshal request: %w", err)
+		}
+		reader = bytes.NewReader(b)
 	}
 
-	// Set default values if not specified
-	if req.Temperature == 0 {
-		req.Temperature = 0.7
-	}
-	if req.MaxTokens == 0 {
-		req.MaxTokens = 256
-	}
-	if req.TopP == 0 {
-		req.TopP = 1.0
+	u := c.baseURL + path
+	if len(query) > 0 {
+		u += "?" + query.Encode()
 	}
 
-	// Marshal request
-	body, err := json.Marshal(req)
+	req, err := http.NewRequestWithContext(ctx, method, u, reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("create request: %w", err)
 	}
 
-	// Create request
-	url := c.baseURL + "/v1/chat/completions"
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("Accept", "application/json")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	for k, v := range c.extraHeaders {
+		req.Header.Set(k, v)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("send request: %w", err)
 	}
+	return resp, nil
+}
 
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json")
-
-	// Send request
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
+// decodeOK checks the response status and decodes a successful JSON body into out.
+func decodeOK(resp *http.Response, out any) error {
 	defer resp.Body.Close()
-
-	// Check response status
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("llama-server error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("llama-server error (status %d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-
-	// Decode response
-	var chatResp ChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if out == nil {
+		return nil
 	}
-
-	return &chatResp, nil
-}
-
-// WithTemperature sets the temperature for chat requests
-func WithTemperature(temp float64) func(*ChatRequest) {
-	return func(r *ChatRequest) {
-		r.Temperature = temp
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("decode response: %w", err)
 	}
-}
-
-// WithMaxTokens sets the max tokens for chat requests
-func WithMaxTokens(max int) func(*ChatRequest) {
-	return func(r *ChatRequest) {
-		r.MaxTokens = max
-	}
-}
-
-// WithTopP sets the top_p for chat requests
-func WithTopP(topP float64) func(*ChatRequest) {
-	return func(r *ChatRequest) {
-		r.TopP = topP
-	}
-}
-
-// ChatStream sends a streaming chat request to the llama-server
-func (c *Client) ChatStream(ctx context.Context, messages []Message, opts ...func(*ChatRequest)) (io.ReadCloser, error) {
-	req := &ChatRequest{
-		Messages: messages,
-		Stream:   true,
-	}
-
-	// Apply optional parameters
-	for _, opt := range opts {
-		opt(req)
-	}
-
-	// Set default values if not specified
-	if req.Temperature == 0 {
-		req.Temperature = 0.7
-	}
-	if req.MaxTokens == 0 {
-		req.MaxTokens = 256
-	}
-	if req.TopP == 0 {
-		req.TopP = 1.0
-	}
-
-	// Marshal request
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	// Create request
-	url := c.baseURL + "/v1/chat/completions"
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json")
-	httpReq.Header.Set("Cache-Control", "no-cache")
-	httpReq.Header.Set("Connection", "keep-alive")
-
-	// Send request
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-
-	// Check response status
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		return nil, fmt.Errorf("llama-server error (status %d): %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	return resp.Body, nil
-}
-
-// GetModelList retrieves the list of available models
-func (c *Client) GetModelList(ctx context.Context) ([]string, error) {
-	url := c.baseURL + "/v1/models"
-
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("llama-server error (status %d): %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var modelsResp struct {
-		Object string  `json:"object"`
-		Data   []Model `json:"data"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	var modelNames []string
-	for _, model := range modelsResp.Data {
-		modelNames = append(modelNames, model.ID)
-	}
-
-	return modelNames, nil
-}
-
-// Model represents a model in the model list
-type Model struct {
-	ID      string       `json:"id"`
-	Object  string       `json:"object"`
-	Owned   string       `json:"owned_by"`
-	Details ModelDetails `json:"details,omitempty"`
-}
-
-// ModelDetails represents model details
-type ModelDetails struct {
-	TotalSize int64 `json:"total_size"`
-}
-
-// HealthCheck performs a health check on the llama-server
-func (c *Client) HealthCheck(ctx context.Context) error {
-	url := c.baseURL + "/health"
-
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("health check failed with status %d", resp.StatusCode)
-	}
-
 	return nil
 }
 
-// CreateEmbedding sends a text input to the embeddings endpoint and returns the float32 vector
-func (c *Client) CreateEmbedding(ctx context.Context, input string, model string) ([]float32, error) {
-	req := &EmbeddingRequest{
-		Input: input,
-		Model: model,
-		Options: &EmbeddingOptions{
-			PoolingType: "mean",
-		},
-	}
-
-	body, err := json.Marshal(req)
+// HealthCheck performs a health check against GET /health.
+func (c *Client) HealthCheck(ctx context.Context) error {
+	resp, err := c.do(ctx, http.MethodGet, "/health", nil, nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal embedding request: %w", err)
+		return err
 	}
+	return decodeOK(resp, nil)
+}
 
-	url := c.baseURL + "/v1/embeddings"
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+// Models retrieves the list of loaded models (GET /v1/models).
+func (c *Client) Models(ctx context.Context, opts ...func(*ModelsRequest)) ([]Model, error) {
+	req := &ModelsRequest{}
+	for _, opt := range opts {
+		opt(req)
+	}
+	resp, err := c.do(ctx, http.MethodGet, "/v1/models", nil, nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create embedding request: %w", err)
+		return nil, err
 	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json")
-
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send embedding request: %w", err)
+	var out struct {
+		Data []Model `json:"data"`
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("llama-server embedding error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	if err := decodeOK(resp, &out); err != nil {
+		return nil, err
 	}
-
-	var embedResp EmbeddingResponse
-	if err := json.NewDecoder(resp.Body).Decode(&embedResp); err != nil {
-		return nil, fmt.Errorf("failed to decode embedding response: %w", err)
-	}
-
-	if len(embedResp.Data) == 0 {
-		return nil, fmt.Errorf("llama-server returned empty embedding data")
-	}
-
-	return embedResp.Data[0].Embedding, nil
+	return out.Data, nil
 }
 
-// ChatRequest represents a request to the llama-server chat endpoint
-type ChatRequest struct {
-	Messages    []Message `json:"messages"`
-	Model       string    `json:"model,omitempty"`
-	Temperature float64   `json:"temperature,omitempty"`
-	MaxTokens   int       `json:"max_tokens,omitempty"`
-	TopP        float64   `json:"top_p,omitempty"`
-	Stream      bool      `json:"stream,omitempty"`
+// ModelsRequest is the request for Models. The endpoint currently takes no
+// body parameters; the type exists for option uniformity.
+type ModelsRequest struct{}
+
+// Model represents a model entry returned by /v1/models.
+type Model struct {
+	ID      string       `json:"id"`
+	Object  string       `json:"object"`
+	OwnedBy string       `json:"owned_by"`
+	Details ModelDetails `json:"details,omitempty"`
 }
 
-// Message represents a chat message
-type Message struct {
-	Role    string `json:"role"` // "system", "user", "assistant"
-	Content string `json:"content"`
+// ModelDetails holds optional model metadata.
+type ModelDetails struct {
+	TotalSize int64 `json:"total_size,omitempty"`
 }
 
-// ChatResponse represents the response from llama-server
-type ChatResponse struct {
-	ID                string   `json:"id"`
-	Created           int64    `json:"created"`
-	Model             string   `json:"model"`
-	Choices           []Choice `json:"choices"`
-	Usage             Usage    `json:"usage"`
-	SystemFingerprint string   `json:"system_fingerprint"`
-}
-
-// Choice represents a choice in the response
-type Choice struct {
-	Index        int         `json:"index"`
-	Message      ChatMessage `json:"message"`
-	FinishReason string      `json:"finish_reason"`
-}
-
-// ChatMessage represents a message in the response
-type ChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-// Usage represents token usage statistics
+// Usage represents token usage statistics.
 type Usage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
 }
 
-// EmbeddingOptions represents embedding request options
-type EmbeddingOptions struct {
-	PoolingType string `json:"pooling_type,omitempty"`
+// Message represents a chat message.
+type Message struct {
+	Role       string     `json:"role"` // "system", "user", "assistant", "tool"
+	Content    string     `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Name       string     `json:"name,omitempty"`
 }
 
-// EmbeddingRequest represents a request to the llama-server embeddings endpoint
-type EmbeddingRequest struct {
-	Input    string            `json:"input"`
-	Model    string            `json:"model,omitempty"`
-	Options  *EmbeddingOptions `json:"options,omitempty"`
+// ToolCall represents a tool invocation produced by the model.
+type ToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type"`
+	Function ToolFunction `json:"function"`
 }
 
-// EmbeddingResponse represents the response from llama-server
-type EmbeddingResponse struct {
-	Object string      `json:"object"`
-	Data   []Embedding `json:"data"`
-	Model  string      `json:"model"`
-	Usage  Usage       `json:"usage"`
+// ToolFunction is the function portion of a ToolCall.
+type ToolFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
-// Embedding represents a single embedding vector
-type Embedding struct {
-	Object    string    `json:"object"`
-	Embedding []float32 `json:"embedding"`
-	Index     int       `json:"index"`
-}
+// itoa is a small helper for building numeric URL path segments.
+func itoa(i int) string { return strconv.Itoa(i) }

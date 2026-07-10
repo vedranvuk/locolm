@@ -106,7 +106,14 @@ func (self *RAGTool) fetchEmbedding(text string) ([]float32, error) {
 	// otherwise Background is sufficient for local synchronous tool execution.
 	// Note: Requires a model with embedding support (e.g., nomic-embed-text, all-minilm)
 	// The model must be started with --pooling mean (or cls, last, rank)
-	return self.client.CreateEmbedding(context.Background(), text, "nomic-embed-text-v1.5")
+	resp, err := self.client.Embedding(context.Background(), text, client.WithEmbeddingModel("nomic-embed-text-v1.5"), client.WithEmbeddingPooling("mean"))
+	if err != nil {
+		return nil, err
+	}
+	if len(resp.Data) == 0 {
+		return nil, fmt.Errorf("embedding returned no data")
+	}
+	return resp.Data[0].Embedding, nil
 }
 
 func (self *RAGTool) rememberSemantic(args map[string]string) (string, error) {
