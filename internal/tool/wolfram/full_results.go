@@ -10,8 +10,8 @@ import (
 	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
-func registerWolframQuery() {
-	mcp.RegisterTool(
+func (self *WolframTool) registerWolframQuery(r mcp.Registry) {
+	r.RegisterTool(
 		"wolfram_query",
 		"Query Wolfram Alpha for computational knowledge, math, science, data, and more. Returns structured results with pod-level granularity. Supports pod selection, location override, unit system, and output format control.",
 		json.RawMessage(`{
@@ -69,11 +69,11 @@ func registerWolframQuery() {
 			},
 			"required": ["input"]
 		}`),
-		wolframQuery,
+		self.wolframQuery,
 	)
 }
 
-func wolframQuery(args map[string]string) (string, error) {
+func (self *WolframTool) wolframQuery(args map[string]string) (string, error) {
 	input, ok := args["input"]
 	if !ok || input == "" {
 		return "", fmt.Errorf("missing required argument: input")
@@ -122,7 +122,7 @@ func wolframQuery(args map[string]string) (string, error) {
 	}
 
 	timeoutSec := parseIntOr(args["timeout"], 30)
-	body, err := wolframGet("http://api.wolframalpha.com/v2/query", params, timeoutSec)
+	body, err := self.wolframGet("http://api.wolframalpha.com/v2/query", params, timeoutSec)
 	if err != nil {
 		return "", err
 	}

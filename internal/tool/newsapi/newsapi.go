@@ -51,10 +51,32 @@ type newsSourceResponse struct {
 	Message string `json:"message"`
 }
 
-// --- Tool registration ---
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
 
-func init() {
-	mcp.RegisterTool(
+type Config struct {
+	// No specific configuration needed for memory tool
+}
+
+func DefaultConfig() *Config {
+	return &Config{}
+}
+
+type NewsAPITool struct {
+	config *Config
+}
+
+func New(config *Config) (*NewsAPITool, error) {
+	return &NewsAPITool{
+		config: config,
+	}, nil
+}
+
+// --- Tool registration ---
+func (self *NewsAPITool) Register(r mcp.Registry) {
+
+	r.RegisterTool(
 		"news_search",
 		"Search for news articles or headlines using newsapi.org. Supports two modes: 'everything' (full article search with filters like query, sources, domains, date range, language, sort) and 'headlines' (top/breaking headlines by country, category, or sources). Requires NEWSAPI_API_KEY env var.",
 		json.RawMessage(`{
@@ -118,7 +140,7 @@ func init() {
 		newsSearchTool,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"news_sources",
 		"List available news sources from newsapi.org. Filter by category, language, or country. Requires NEWSAPI_API_KEY env var.",
 		json.RawMessage(`{

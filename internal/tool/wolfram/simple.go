@@ -9,8 +9,8 @@ import (
 	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
-func registerWolframImage() {
-	mcp.RegisterTool(
+func (self *WolframTool) registerWolframImage(r mcp.Registry) {
+	r.RegisterTool(
 		"wolfram_image",
 		"Query Wolfram Alpha and get a rendered image of the full result page. Returns a Markdown image link showing the visual Wolfram Alpha output.",
 		json.RawMessage(`{
@@ -52,11 +52,11 @@ func registerWolframImage() {
 			},
 			"required": ["input"]
 		}`),
-		wolframImage,
+		self.wolframImage,
 	)
 }
 
-func wolframImage(args map[string]string) (string, error) {
+func (self *WolframTool) wolframImage(args map[string]string) (string, error) {
 	input, ok := args["input"]
 	if !ok || input == "" {
 		return "", fmt.Errorf("missing required argument: input")
@@ -93,7 +93,7 @@ func wolframImage(args map[string]string) (string, error) {
 
 	// Simple API returns raw image bytes (PNG or GIF), not a URL.
 	// We make the HTTP call and return the full URL for the client to display.
-	imageURL, contentType, err := wolframGetImage("http://api.wolframalpha.com/v1/simple", params, 30)
+	imageURL, contentType, err := self.wolframGetImage("http://api.wolframalpha.com/v1/simple", params, 30)
 	if err != nil {
 		return "", err
 	}

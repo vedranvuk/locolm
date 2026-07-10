@@ -15,8 +15,8 @@ import (
 // Config
 // ---------------------------------------------------------------------------
 
-// ExecConfig holds all configuration for the exec tool.
-type ExecConfig struct {
+// Config holds all configuration for the exec tool.
+type Config struct {
 	// AllowedCommands is a list of regex patterns. If non-empty, each command
 	// must match at least one pattern to be allowed. If empty, all commands are allowed.
 	AllowedCommands []string `json:"allowed_commands"`
@@ -26,17 +26,47 @@ type ExecConfig struct {
 	MaxOutputBytes int `json:"max_output_bytes"`
 }
 
-// execCfg is the package-level config with safe defaults.
-var execCfg = ExecConfig{
-	TimeoutSec:     30,
-	MaxOutputBytes: 102400, // 100 KB
+func DefaultConfig() *Config {
+	return &Config{
+		TimeoutSec:     30,
+		MaxOutputBytes: 102400, // 100 KB
+	}
 }
 
-var execAllowedPatterns []*regexp.Regexp
+// ---------------------------------------------------------------------------
+// Tool
+// ---------------------------------------------------------------------------
 
-func init() {
-	// Register tool
-	mcp.RegisterTool(
+type ExecTool struct {
+	config *Config
+	allowedPatterns []*regexp.Regexp
+}
+
+func New(config *Config) (*ExecTool, error) {
+	if config == nil {
+		config = DefaultConfig()
+	}
+	tool := &ExecTool{config: config}
+	tool.compilePatterns()
+	return tool, nil
+}
+
+func (self *ExecTool) compilePatterns() {
+	self.allowedPatterns = nil
+	for _, pattern := range self.config.AllowedCommands {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			log.Printf("[EXEC] Warning: invalid allowed_commands regex %q: %v", pattern, err)
+			continue
+		}
+		self.allowedPatterns = append(self.allowedPatterns, re)
+	}
+	log.Printf("[EXEC] Config loaded: timeout=%d, max_output=%d, allowed_patterns=%d",
+		self.config.TimeoutSec, self.config.MaxOutputBytes, len(self.allowedPatterns))
+}
+
+func (self *ExecTool) Register(r mcp.Registry) {
+	r.RegisterTool(
 		"fs_run",
 		"Execute a command and capture its output. Runs via cmd /C on Windows. Commands may be restricted by the allowed_commands config.",
 		json.RawMessage(`{
@@ -53,39 +83,19 @@ func init() {
 			},
 			"required": ["command"]
 		}`),
-		runCommand,
+		self.runCommand,
 	)
-}
-
-// LoadExecConfig unmarshals the exec JSON config into execCfg and compiles regex patterns.
-// Call this from main after LoadConfig.
-func LoadExecConfig(raw json.RawMessage) {
-	if len(raw) == 0 {
-		return
-	}
-	json.Unmarshal(raw, &execCfg)
-	execAllowedPatterns = nil
-	for _, pattern := range execCfg.AllowedCommands {
-		re, err := regexp.Compile(pattern)
-		if err != nil {
-			log.Printf("[EXEC] Warning: invalid allowed_commands regex %q: %v", pattern, err)
-			continue
-		}
-		execAllowedPatterns = append(execAllowedPatterns, re)
-	}
-	log.Printf("[EXEC] Config loaded: timeout=%d, max_output=%d, allowed_patterns=%d",
-		execCfg.TimeoutSec, execCfg.MaxOutputBytes, len(execAllowedPatterns))
 }
 
 // ---------------------------------------------------------------------------
 // Security check
 // ---------------------------------------------------------------------------
 
-func isCommandAllowed(command string) bool {
-	if len(execAllowedPatterns) == 0 {
+func (self *ExecTool) isCommandAllowed(command string) bool {
+	if len(self.allowedPatterns) == 0 {
 		return true // no restrictions
 	}
-	for _, re := range execAllowedPatterns {
+	for _, re := range self.allowedPatterns {
 		if re.MatchString(command) {
 			return true
 		}
@@ -97,17 +107,17 @@ func isCommandAllowed(command string) bool {
 // fs_run
 // ---------------------------------------------------------------------------
 
-func runCommand(args map[string]string) (string, error) {
+func (self *ExecTool) runCommand(args map[string]string) (string, error) {
 	command := args["command"]
 	if command == "" {
 		return "", fmt.Errorf("command is required")
 	}
 
-	if !isCommandAllowed(command) {
+	if !self.isCommandAllowed(command) {
 		return "", fmt.Errorf("command not allowed by config: %q", command)
 	}
 
-	timeoutSec := execCfg.TimeoutSec
+	timeoutSec := self.config.TimeoutSec
 	if v := args["timeout"]; v != "" {
 		if d, err := time.ParseDuration(v + "s"); err == nil {
 			timeoutSec = int(d.Seconds())
@@ -141,15 +151,15 @@ func runCommand(args map[string]string) (string, error) {
 				exitCode = -1
 			}
 		}
-		return formatOutput(exitCode, stdout, stderr, false), nil
+		return self.formatOutput(exitCode, stdout, stderr, false), nil
 	case <-time.After(time.Duration(timeoutSec) * time.Second):
 		cmd.Process.Kill()
-		return formatOutput(-1, stdout, stderr, true), nil
+		return self.formatOutput(-1, stdout, stderr, true), nil
 	}
 }
 
-func formatOutput(exitCode int, stdout, stderr []byte, timedOut bool) string {
-	maxOut := execCfg.MaxOutputBytes
+func (self *ExecTool) formatOutput(exitCode int, stdout, stderr []byte, timedOut bool) string {
+	maxOut := self.config.MaxOutputBytes
 	if len(stdout) > maxOut {
 		stdout = stdout[:maxOut]
 		stdout = append(stdout, []byte("\n...[truncated]")...)
@@ -161,8 +171,8 @@ func formatOutput(exitCode int, stdout, stderr []byte, timedOut bool) string {
 
 	out := map[string]interface{}{
 		"exit_code": exitCode,
-		"stdout":   string(stdout),
-		"stderr":   string(stderr),
+		"stdout":    string(stdout),
+		"stderr":    string(stderr),
 	}
 	if timedOut {
 		out["timed_out"] = true

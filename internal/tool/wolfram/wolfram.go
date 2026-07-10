@@ -14,31 +14,58 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 
-var wolframAppID string
+type Config struct {
+	AppID   string `json:"appid"`
+	Timeout int    `json:"timeout_sec"`
+}
 
-func init() {
-	wolframAppID = os.Getenv("WOLFRAM_APPID")
-	if wolframAppID != "" {
-		log.Printf("[WOLFRAM] AppID loaded: %s...", wolframAppID[:8])
+func DefaultConfig() *Config {
+	return &Config{
+		AppID:   "",
+		Timeout: 30,
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tool
+// ---------------------------------------------------------------------------
+
+type WolframTool struct {
+	config *Config
+}
+
+func New(config *Config) (*WolframTool, error) {
+	if config == nil {
+		config = DefaultConfig()
 	}
 
-	// Register all wolfram tools (only if AppID is available)
-	if wolframAppID != "" {
-		registerWolframQuery()
-		registerWolframLLM()
-		registerWolframShort()
-		registerWolframImage()
-		registerWolframRecognize()
+	if config.AppID != "" {
+		log.Printf("[WOLFRAM] AppID loaded: %s...", config.AppID[:8])
+	}
+
+	return &WolframTool{
+		config: config,
+	}, nil
+}
+
+func (self *WolframTool) Register(r mcp.Registry) {
+	if self.config.AppID != "" {
+		self.registerWolframQuery(r)
+		self.registerWolframLLM(r)
+		self.registerWolframShort(r)
+		self.registerWolframImage(r)
+		self.registerWolframRecognize(r)
 	} else {
 		log.Printf("[WOLFRAM] WOLFRAM_APPID not set — wolfram tools NOT registered")
 	}
@@ -48,12 +75,12 @@ func init() {
 // HTTP client
 // ---------------------------------------------------------------------------
 
-func wolframGet(baseURL string, params url.Values, timeoutSec int) ([]byte, error) {
-	if wolframAppID == "" {
+func (self *WolframTool) wolframGet(baseURL string, params url.Values, timeoutSec int) ([]byte, error) {
+	if self.config.AppID == "" {
 		return nil, fmt.Errorf("wolfram tools require WOLFRAM_APPID environment variable to be set")
 	}
 
-	params.Set("appid", wolframAppID)
+	params.Set("appid", self.config.AppID)
 	fullURL := baseURL + "?" + params.Encode()
 
 	// Log query without AppID for security
@@ -101,12 +128,12 @@ func wolframGet(baseURL string, params url.Values, timeoutSec int) ([]byte, erro
 
 // wolframGetImage makes a request to an API that returns raw image bytes.
 // It returns the full URL (which the client can use directly) and the content type.
-func wolframGetImage(baseURL string, params url.Values, timeoutSec int) (string, string, error) {
-	if wolframAppID == "" {
+func (self *WolframTool) wolframGetImage(baseURL string, params url.Values, timeoutSec int) (string, string, error) {
+	if self.config.AppID == "" {
 		return "", "", fmt.Errorf("wolfram tools require WOLFRAM_APPID environment variable to be set")
 	}
 
-	params.Set("appid", wolframAppID)
+	params.Set("appid", self.config.AppID)
 	fullURL := baseURL + "?" + params.Encode()
 
 	// Log query without AppID for security
@@ -164,36 +191,36 @@ func wolframGetImage(baseURL string, params url.Values, timeoutSec int) (string,
 // ---------------------------------------------------------------------------
 
 type QueryResult struct {
-	XMLName     xml.Name     `xml:"queryresult"`
-	Success     string       `xml:"success,attr"`
-	Error       string       `xml:"error,attr"`
-	NumPods     int          `xml:"numpods,attr"`
-	DataTypes   string       `xml:"datatypes,attr"`
-	Timing      string       `xml:"timing,attr"`
-	TimedOut    string       `xml:"timedout,attr"`
-	ParseTime   string       `xml:"parsetiming,attr"`
-	ParseTimedOut string     `xml:"parsetimedout,attr"`
-	Recalculate string       `xml:"recalculate,attr"`
-	Version     string       `xml:"version,attr"`
-	Pods        []Pod        `xml:"pod"`
-	Assumptions []Assumption `xml:"assumptions>assumption"`
-	Warnings    []Warning    `xml:"warnings"`
-	Sources     []Source     `xml:"sources>source"`
-	DidYouMeans []DidYouMean `xml:"didyoumeans>didyoumean"`
+	XMLName       xml.Name     `xml:"queryresult"`
+	Success       string       `xml:"success,attr"`
+	Error         string       `xml:"error,attr"`
+	NumPods       int          `xml:"numpods,attr"`
+	DataTypes     string       `xml:"datatypes,attr"`
+	Timing        string       `xml:"timing,attr"`
+	TimedOut      string       `xml:"timedout,attr"`
+	ParseTime     string       `xml:"parsetiming,attr"`
+	ParseTimedOut string       `xml:"parsetimedout,attr"`
+	Recalculate   string       `xml:"recalculate,attr"`
+	Version       string       `xml:"version,attr"`
+	Pods          []Pod        `xml:"pod"`
+	Assumptions   []Assumption `xml:"assumptions>assumption"`
+	Warnings      []Warning    `xml:"warnings"`
+	Sources       []Source     `xml:"sources>source"`
+	DidYouMeans   []DidYouMean `xml:"didyoumeans>didyoumean"`
 }
 
 type Pod struct {
-	XMLName   xml.Name  `xml:"pod"`
-	Title     string    `xml:"title,attr"`
-	Scanner   string    `xml:"scanner,attr"`
-	ID        string    `xml:"id,attr"`
-	Position  int       `xml:"position,attr"`
-	Primary   bool      `xml:"primary,attr"`
-	Error     string    `xml:"error,attr"`
+	XMLName    xml.Name `xml:"pod"`
+	Title      string   `xml:"title,attr"`
+	Scanner    string   `xml:"scanner,attr"`
+	ID         string   `xml:"id,attr"`
+	Position   int      `xml:"position,attr"`
+	Primary    bool     `xml:"primary,attr"`
+	Error      string   `xml:"error,attr"`
 	NumSubPods int      `xml:"numsubpods,attr"`
-	SubPods   []SubPod  `xml:"subpod"`
-	States    []State   `xml:"states>state"`
-	Infos     []Info    `xml:"infos>info"`
+	SubPods    []SubPod `xml:"subpod"`
+	States     []State  `xml:"states>state"`
+	Infos      []Info   `xml:"infos>info"`
 }
 
 type SubPodImage struct {
@@ -203,13 +230,13 @@ type SubPodImage struct {
 }
 
 type SubPod struct {
-	XMLName   xml.Name     `xml:"subpod"`
-	Title     string       `xml:"title,attr"`
-	PlainText string       `xml:"plaintext"`
+	XMLName   xml.Name    `xml:"subpod"`
+	Title     string      `xml:"title,attr"`
+	PlainText string      `xml:"plaintext"`
 	Image     SubPodImage `xml:"img"`
-	MathML    string       `xml:"mathml"`
-	MInput    string       `xml:"minput"`
-	MOutput   string       `xml:"moutput"`
+	MathML    string      `xml:"mathml"`
+	MInput    string      `xml:"minput"`
+	MOutput   string      `xml:"moutput"`
 }
 
 type State struct {
@@ -224,10 +251,10 @@ type Info struct {
 }
 
 type Assumption struct {
-	XMLName xml.Name      `xml:"assumption"`
-	Type    string        `xml:"type,attr"`
-	Word    string        `xml:"word,attr"`
-	Count   int           `xml:"count,attr"`
+	XMLName xml.Name          `xml:"assumption"`
+	Type    string            `xml:"type,attr"`
+	Word    string            `xml:"word,attr"`
+	Count   int               `xml:"count,attr"`
 	Values  []AssumptionValue `xml:"value"`
 }
 
@@ -239,7 +266,7 @@ type AssumptionValue struct {
 }
 
 type Warning struct {
-	XMLName xml.Name `xml:"warnings"`
+	XMLName     xml.Name            `xml:"warnings"`
 	Reinterpret *ReinterpretWarning `xml:"reinterpret"`
 	Spellcheck  *SpellcheckWarning  `xml:"spellcheck"`
 	Translation *TranslationWarning `xml:"translation"`
@@ -254,10 +281,10 @@ type ReinterpretWarning struct {
 }
 
 type SpellcheckWarning struct {
-	XMLName   xml.Name `xml:"spellcheck"`
-	Word      string   `xml:"word,attr"`
-	Suggestion string  `xml:"suggestion,attr"`
-	Text      string   `xml:"text,attr"`
+	XMLName    xml.Name `xml:"spellcheck"`
+	Word       string   `xml:"word,attr"`
+	Suggestion string   `xml:"suggestion,attr"`
+	Text       string   `xml:"text,attr"`
 }
 
 type TranslationWarning struct {
@@ -436,5 +463,3 @@ func parseIntOr(s string, defaultVal int) int {
 	}
 	return v
 }
-
-

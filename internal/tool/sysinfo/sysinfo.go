@@ -10,11 +10,39 @@ import (
 	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
-// startTime is set by main.go when the process starts.
-var startTime = time.Now()
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
 
-func init() {
-	mcp.RegisterTool(
+type Config struct {
+	// No specific configuration needed for sysinfo tool
+}
+
+func DefaultConfig() *Config {
+	return &Config{}
+}
+
+// ---------------------------------------------------------------------------
+// Tool
+// ---------------------------------------------------------------------------
+
+type SysInfoTool struct {
+	config    *Config
+	startTime time.Time
+}
+
+func New(config *Config) (*SysInfoTool, error) {
+	if config == nil {
+		config = DefaultConfig()
+	}
+	return &SysInfoTool{
+		config:    config,
+		startTime: time.Now(),
+	}, nil
+}
+
+func (self *SysInfoTool) Register(r mcp.Registry) {
+	r.RegisterTool(
 		"sys_info",
 		"MANDATORY: You MUST call this tool FIRST before any other tool in every conversation. Returns date, time, timezone, OS, architecture, hostname, working directory, user, Go version, and uptime. Do not skip this. Do not call any other tool before this one.",
 		json.RawMessage(`{
@@ -22,16 +50,16 @@ func init() {
 			"properties": {},
 			"required": []
 		}`),
-		sysInfoTool,
+		self.Run,
 	)
 }
 
-func sysInfoTool(_ map[string]string) (string, error) {
+func (self *SysInfoTool) Run(_ map[string]string) (string, error) {
 	now := time.Now()
 	hostname, _ := os.Hostname()
 	cwd, _ := os.Getwd()
 
-	uptime := now.Sub(startTime).Round(time.Second).String()
+	uptime := now.Sub(self.startTime).Round(time.Second).String()
 
 	info := fmt.Sprintf(
 		"### System Runtime\n"+

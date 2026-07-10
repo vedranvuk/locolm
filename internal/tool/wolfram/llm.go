@@ -8,8 +8,8 @@ import (
 	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
-func registerWolframLLM() {
-	mcp.RegisterTool(
+func (self *WolframTool) registerWolframLLM(r mcp.Registry) {
+	r.RegisterTool(
 		"wolfram_llm",
 		"Query Wolfram Alpha and get results optimized for LLM consumption. Returns structured text tables, image URLs, and a link to the full results page. This is the recommended tool for most queries.",
 		json.RawMessage(`{
@@ -39,11 +39,11 @@ func registerWolframLLM() {
 			},
 			"required": ["input"]
 		}`),
-		wolframLLM,
+		self.wolframLLM,
 	)
 }
 
-func wolframLLM(args map[string]string) (string, error) {
+func (self *WolframTool) wolframLLM(args map[string]string) (string, error) {
 	input, ok := args["input"]
 	if !ok || input == "" {
 		return "", fmt.Errorf("missing required argument: input")
@@ -65,7 +65,7 @@ func wolframLLM(args map[string]string) (string, error) {
 		params.Set("assumption", v)
 	}
 
-	body, err := wolframGet("https://www.wolframalpha.com/api/v1/llm-api", params, 30)
+	body, err := self.wolframGet("https://www.wolframalpha.com/api/v1/llm-api", params, 30)
 	if err != nil {
 		return "", err
 	}

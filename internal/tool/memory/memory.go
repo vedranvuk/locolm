@@ -5,34 +5,56 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/vedranvuk/locolm/internal/mcp"
 	_ "modernc.org/sqlite"
 )
 
-var db *sql.DB
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
 
-func init() {
-	exePath, err := os.Executable()
-	if err != nil {
-		exePath = "."
+type Config struct {
+	// No specific configuration needed for memory tool
+}
+
+func DefaultConfig() *Config {
+	return &Config{}
+}
+
+// ---------------------------------------------------------------------------
+// Tool
+// ---------------------------------------------------------------------------
+
+type MemoryTool struct {
+	config *Config
+	db     *sql.DB
+}
+
+func New(config *Config, db *sql.DB) (*MemoryTool, error) {
+	if db == nil {
+		return nil, errors.New("memory: db is nil")
 	}
-	dbPath := filepath.Join(filepath.Dir(exePath), "locolm_mem.db")
-
-	db, err = sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)")
-	if err != nil {
-		panic(fmt.Sprintf("failed to open database: %v", err))
+	if config == nil {
+		config = DefaultConfig()
 	}
 
 	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS entities (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, category TEXT NOT NULL)`)
 	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS observations (id TEXT PRIMARY KEY, entity_id TEXT REFERENCES entities(id) ON DELETE CASCADE, content TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`)
 	_, _ = db.Exec(`CREATE VIRTUAL TABLE IF NOT EXISTS observations_fts USING fts5(id UNINDEXED, content)`)
 
-	mcp.RegisterTool(
+	return &MemoryTool{
+		config: config,
+		db:     db,
+	}, nil
+}
+
+func (self *MemoryTool) Register(r mcp.Registry) {
+
+	r.RegisterTool(
 		"add_observations",
 		"Adds new factual knowledge about an entity. Use this to record preferences, project details, or persistent user traits. The 'facts' argument must be a JSON array of strings (e.g., '[\"Fact 1\", \"Fact 2\"]').",
 		json.RawMessage(`{
@@ -51,10 +73,10 @@ func init() {
 				"facts"
 			]
 		}`),
-		addObservations,
+		self.addObservations,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"remove_observations",
 		"Deletes specific outdated or incorrect facts for an entity. Provide the exact string content of the observation to be pruned. The 'facts' argument must be a JSON array of strings.",
 		json.RawMessage(`{
@@ -71,10 +93,10 @@ func init() {
 				"facts"
 			]
 		}`),
-		removeObservations,
+		self.removeObservations,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"search_memory",
 		"Performs a full-text search across all stored memories. Use this to retrieve historical context, previous project notes, or related user preferences when the entity name is unknown.",
 		json.RawMessage(`{
@@ -86,10 +108,10 @@ func init() {
 				"query"
 			]
 		}`),
-		searchMemory,
+		self.searchMemory,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"get_entity_context",
 		"Loads the full memory profile for a specific entity. Use this before making decisions involving an entity (like a user or project) to ensure you have the most up-to-date context.",
 		json.RawMessage(`{
@@ -101,7 +123,7 @@ func init() {
 				"entity_name"
 			]
 		}`),
-		getEntityContext,
+		self.getEntityContext,
 	)
 }
 
@@ -111,13 +133,13 @@ func generateID() string {
 	return hex.EncodeToString(b)
 }
 
-func addObservations(args map[string]string) (string, error) {
+func (self *MemoryTool) addObservations(args map[string]string) (string, error) {
 	var facts []string
 	if err := json.Unmarshal([]byte(args["facts"]), &facts); err != nil {
 		return "", fmt.Errorf("invalid JSON for facts")
 	}
 
-	tx, _ := db.Begin()
+	tx, _ := self.db.Begin()
 	defer tx.Rollback()
 
 	var entityID string
@@ -135,11 +157,11 @@ func addObservations(args map[string]string) (string, error) {
 	return "Added facts successfully.", tx.Commit()
 }
 
-func removeObservations(args map[string]string) (string, error) {
+func (self *MemoryTool) removeObservations(args map[string]string) (string, error) {
 	var facts []string
 	_ = json.Unmarshal([]byte(args["facts"]), &facts)
 
-	tx, _ := db.Begin()
+	tx, _ := self.db.Begin()
 	defer tx.Rollback()
 
 	for _, c := range facts {
@@ -152,15 +174,15 @@ func removeObservations(args map[string]string) (string, error) {
 	return "Pruning complete.", tx.Commit()
 }
 
-func getEntityContext(args map[string]string) (string, error) {
+func (self *MemoryTool) getEntityContext(args map[string]string) (string, error) {
 	var category string
 	var entityID string
-	err := db.QueryRow("SELECT id, category FROM entities WHERE name = ?", args["entity_name"]).Scan(&entityID, &category)
+	err := self.db.QueryRow("SELECT id, category FROM entities WHERE name = ?", args["entity_name"]).Scan(&entityID, &category)
 	if err != nil {
 		return "Entity not found.", nil
 	}
 
-	rows, _ := db.Query("SELECT content FROM observations WHERE entity_id = ? ORDER BY created_at DESC", entityID)
+	rows, _ := self.db.Query("SELECT content FROM observations WHERE entity_id = ? ORDER BY created_at DESC", entityID)
 	defer rows.Close()
 	var out []string
 	for rows.Next() {
@@ -171,8 +193,8 @@ func getEntityContext(args map[string]string) (string, error) {
 	return fmt.Sprintf("Entity: %s (%s)\n%s", args["entity_name"], category, strings.Join(out, "\n")), nil
 }
 
-func searchMemory(args map[string]string) (string, error) {
-	rows, _ := db.Query(`SELECT e.name, o.content FROM observations_fts f JOIN observations o ON f.id = o.id JOIN entities e ON o.entity_id = e.id WHERE observations_fts MATCH ? ORDER BY rank`, args["query"])
+func (self *MemoryTool) searchMemory(args map[string]string) (string, error) {
+	rows, _ := self.db.Query(`SELECT e.name, o.content FROM observations_fts f JOIN observations o ON f.id = o.id JOIN entities e ON o.entity_id = e.id WHERE observations_fts MATCH ? ORDER BY rank`, args["query"])
 	defer rows.Close()
 	var res []string
 	for rows.Next() {

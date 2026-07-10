@@ -23,27 +23,37 @@ import (
 // Config & State Management
 // ---------------------------------------------------------------------------
 
-type GoplsConfig struct {
+type Config struct {
 	GoplsPath          string `json:"gopls_path"`
 	IdleTimeoutMinutes int    `json:"idle_timeout_minutes"`
 	MaxWorkspaces      int    `json:"max_workspaces"`
 }
 
-var goplsCfg = GoplsConfig{
-	GoplsPath:          "gopls",
-	IdleTimeoutMinutes: 5,
-	MaxWorkspaces:      10,
+func DefaultConfig() *Config {
+	return &Config{
+		GoplsPath:          "gopls",
+		IdleTimeoutMinutes: 5,
+		MaxWorkspaces:      10,
+	}
 }
 
-var (
+type Gopls struct {
 	mu                  sync.RWMutex
-	workspaces          = make(map[string]*goplsInstance)
+	config              *Config
+	workspaces          map[string]*goplsInstance
 	activeWorkspacePath string
-)
+}
 
-func init() {
+func New(config *Config) (*Gopls, error) {
+	return &Gopls{
+		config:     config,
+		workspaces: make(map[string]*goplsInstance),
+	}, nil
+}
+
+func (self *Gopls) Register(r mcp.Registry) {
 	// --- LIFECYCLE MANAGEMENT ---
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"gopls_workspace_activate",
 		"Sets the active Go project context workspace directory.",
 		json.RawMessage(`{
@@ -56,11 +66,11 @@ func init() {
 			},
 			"required": ["path"]
 		}`),
-		goplsWorkspaceActivate,
+		self.goplsWorkspaceActivate,
 	)
 
 	// --- CATEGORY 1: NAVIGATION & DISCOVERY ---
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"gopls_definition",
 		"Locates the exact declaration position of a Go identifier.",
 		json.RawMessage(`{
@@ -72,10 +82,10 @@ func init() {
 			},
 			"required": ["file", "line", "character"]
 		}`),
-		goplsDefinition,
+		self.goplsDefinition,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"gopls_references",
 		"Traces and lists all occurrences, call sites, and usages of a specific Go identifier.",
 		json.RawMessage(`{
@@ -87,10 +97,10 @@ func init() {
 			},
 			"required": ["file", "line", "character"]
 		}`),
-		goplsReferences,
+		self.goplsReferences,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"gopls_implementation",
 		"Identifies all concrete Go structs, types, or methods that actively implement a target Go interface.",
 		json.RawMessage(`{
@@ -102,10 +112,10 @@ func init() {
 			},
 			"required": ["file", "line", "character"]
 		}`),
-		goplsImplementation,
+		self.goplsImplementation,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"gopls_symbols",
 		"Performs a Go workspace-wide fuzzy search to look up global Go definitions.",
 		json.RawMessage(`{
@@ -115,11 +125,11 @@ func init() {
 			},
 			"required": ["query"]
 		}`),
-		goplsSymbols,
+		self.goplsSymbols,
 	)
 
 	// --- CATEGORY 2: DIAGNOSTICS & REAL-TIME ANALYSIS ---
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"gopls_diagnostics",
 		"Extracts real-time Go compiler diagnostics.",
 		json.RawMessage(`{
@@ -128,11 +138,11 @@ func init() {
 				"file": { "type": "string", "description": "Optional Go file path to narrow down scope." }
 			}
 		}`),
-		goplsDiagnostics,
+		self.goplsDiagnostics,
 	)
 
 	// --- CATEGORY 3: SMART CODE ASSISTANCE ---
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"gopls_completion",
 		"Generates context-aware Go code intelligence completions.",
 		json.RawMessage(`{
@@ -144,11 +154,11 @@ func init() {
 			},
 			"required": ["file", "line", "character"]
 		}`),
-		goplsCompletion,
+		self.goplsCompletion,
 	)
 
 	// --- CATEGORY 4: TRANSFORMATIONS & REFACTORING ---
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"gopls_rename",
 		"Executes an automated, structurally safe refactoring rename of a Go identifier.",
 		json.RawMessage(`{
@@ -161,11 +171,11 @@ func init() {
 			},
 			"required": ["file", "line", "character", "new_name"]
 		}`),
-		goplsRename,
+		self.goplsRename,
 	)
 
 	// --- CATEGORY 5: ECOSYSTEM SUPPORT ---
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"gopls_format",
 		"Calculates native gofmt spacing layouts and automatically evaluates import blocks.",
 		json.RawMessage(`{
@@ -175,18 +185,10 @@ func init() {
 			},
 			"required": ["file"]
 		}`),
-		goplsFormat,
+		self.goplsFormat,
 	)
 
-	go startJanitor(30 * time.Second)
-}
-
-func LoadGoplsConfig(raw json.RawMessage) {
-	if len(raw) == 0 {
-		return
-	}
-	json.Unmarshal(raw, &goplsCfg)
-	log.Printf("[GOPLS] Config initialized: path=%s, timeout=%dm, max=%d", goplsCfg.GoplsPath, goplsCfg.IdleTimeoutMinutes, goplsCfg.MaxWorkspaces)
+	go self.startJanitor(30 * time.Second)
 }
 
 // ---------------------------------------------------------------------------
@@ -268,27 +270,27 @@ func (inst *goplsInstance) sendNotification(method string, params any) error {
 // Core Tool Handlers
 // ---------------------------------------------------------------------------
 
-func goplsWorkspaceActivate(args map[string]string) (string, error) {
+func (self *Gopls) goplsWorkspaceActivate(args map[string]string) (string, error) {
 	path := args["path"]
 	if path == "" {
 		return "", fmt.Errorf("path context identifier is required")
 	}
-	inst, err := getOrCreateWorkspace(path)
+	inst, err := self.getOrCreateWorkspace(path)
 	if err != nil {
 		return "", err
 	}
-	mu.Lock()
-	activeWorkspacePath = inst.path
-	mu.Unlock()
+	self.mu.Lock()
+	self.activeWorkspacePath = inst.path
+	self.mu.Unlock()
 	return fmt.Sprintf("Workspace tracking set to active project: %s", inst.path), nil
 }
 
-func goplsDefinition(args map[string]string) (string, error) {
-	return handleLocationQuery("textDocument/definition", args)
+func (self *Gopls) goplsDefinition(args map[string]string) (string, error) {
+	return self.handleLocationQuery("textDocument/definition", args)
 }
 
-func goplsReferences(args map[string]string) (string, error) {
-	inst, err := getActiveInstance()
+func (self *Gopls) goplsReferences(args map[string]string) (string, error) {
+	inst, err := self.getActiveInstance()
 	if err != nil {
 		return "", err
 	}
@@ -322,12 +324,12 @@ func goplsReferences(args map[string]string) (string, error) {
 	return out.String(), nil
 }
 
-func goplsImplementation(args map[string]string) (string, error) {
-	return handleLocationQuery("textDocument/implementation", args)
+func (self *Gopls) goplsImplementation(args map[string]string) (string, error) {
+	return self.handleLocationQuery("textDocument/implementation", args)
 }
 
-func goplsSymbols(args map[string]string) (string, error) {
-	inst, err := getActiveInstance()
+func (self *Gopls) goplsSymbols(args map[string]string) (string, error) {
+	inst, err := self.getActiveInstance()
 	if err != nil {
 		return "", err
 	}
@@ -354,8 +356,8 @@ func goplsSymbols(args map[string]string) (string, error) {
 	return out.String(), nil
 }
 
-func goplsDiagnostics(args map[string]string) (string, error) {
-	inst, err := getActiveInstance()
+func (self *Gopls) goplsDiagnostics(args map[string]string) (string, error) {
+	inst, err := self.getActiveInstance()
 	if err != nil {
 		return "", err
 	}
@@ -384,8 +386,8 @@ func goplsDiagnostics(args map[string]string) (string, error) {
 	return out.String(), nil
 }
 
-func goplsCompletion(args map[string]string) (string, error) {
-	inst, err := getActiveInstance()
+func (self *Gopls) goplsCompletion(args map[string]string) (string, error) {
+	inst, err := self.getActiveInstance()
 	if err != nil {
 		return "", err
 	}
@@ -440,8 +442,8 @@ func goplsCompletion(args map[string]string) (string, error) {
 	return out.String(), nil
 }
 
-func goplsRename(args map[string]string) (string, error) {
-	inst, err := getActiveInstance()
+func (self *Gopls) goplsRename(args map[string]string) (string, error) {
+	inst, err := self.getActiveInstance()
 	if err != nil {
 		return "", err
 	}
@@ -483,8 +485,8 @@ func goplsRename(args map[string]string) (string, error) {
 	return out.String(), nil
 }
 
-func goplsFormat(args map[string]string) (string, error) {
-	inst, err := getActiveInstance()
+func (self *Gopls) goplsFormat(args map[string]string) (string, error) {
+	inst, err := self.getActiveInstance()
 	if err != nil {
 		return "", err
 	}
@@ -521,8 +523,8 @@ func goplsFormat(args map[string]string) (string, error) {
 // Internal System Utilities
 // ---------------------------------------------------------------------------
 
-func handleLocationQuery(method string, args map[string]string) (string, error) {
-	inst, err := getActiveInstance()
+func (self *Gopls) handleLocationQuery(method string, args map[string]string) (string, error) {
+	inst, err := self.getActiveInstance()
 	if err != nil {
 		return "", err
 	}
@@ -567,21 +569,21 @@ func handleLocationQuery(method string, args map[string]string) (string, error) 
 		strings.TrimPrefix(locs[0].URI, "file://"), locs[0].Range.Start.Line+1, locs[0].Range.Start.Character), nil
 }
 
-func getActiveInstance() (*goplsInstance, error) {
-	mu.RLock()
-	path := activeWorkspacePath
-	mu.RUnlock()
+func (self *Gopls) getActiveInstance() (*goplsInstance, error) {
+	self.mu.RLock()
+	path := self.activeWorkspacePath
+	self.mu.RUnlock()
 
 	if path == "" {
 		return nil, fmt.Errorf("active workspace context missing. Call gopls_workspace_activate first")
 	}
 
-	mu.Lock()
-	inst, exists := workspaces[path]
+	self.mu.Lock()
+	inst, exists := self.workspaces[path]
 	if exists {
 		inst.lastActive = time.Now()
 	}
-	mu.Unlock()
+	self.mu.Unlock()
 
 	if !exists {
 		return nil, fmt.Errorf("workspace instance expired due to idle constraints. Re-run gopls_workspace_activate")
@@ -606,25 +608,25 @@ func parsePositionArgs(args map[string]string, wsPath string) (string, int, int,
 	return absFile, line - 1, char, nil
 }
 
-func getOrCreateWorkspace(path string) (*goplsInstance, error) {
-	mu.Lock()
-	defer mu.Unlock()
+func (self *Gopls) getOrCreateWorkspace(path string) (*goplsInstance, error) {
+	self.mu.Lock()
+	defer self.mu.Unlock()
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
 	}
 
-	if inst, exists := workspaces[absPath]; exists {
+	if inst, exists := self.workspaces[absPath]; exists {
 		inst.lastActive = time.Now()
 		return inst, nil
 	}
 
-	if len(workspaces) >= goplsCfg.MaxWorkspaces {
+	if len(self.workspaces) >= self.config.MaxWorkspaces {
 		var oldestPath string
 		var oldestTime time.Time
 		first := true
-		for p, inst := range workspaces {
+		for p, inst := range self.workspaces {
 			if first || inst.lastActive.Before(oldestTime) {
 				oldestTime = inst.lastActive
 				oldestPath = p
@@ -633,13 +635,13 @@ func getOrCreateWorkspace(path string) (*goplsInstance, error) {
 		}
 		if oldestPath != "" {
 			log.Printf("[GOPLS] Max cap reached. Evicting oldest context: %s", oldestPath)
-			workspaces[oldestPath].close()
-			delete(workspaces, oldestPath)
+			self.workspaces[oldestPath].close()
+			delete(self.workspaces, oldestPath)
 		}
 	}
 
 	log.Printf("[GOPLS] Creating isolated language server session: %s", absPath)
-	cmd := exec.Command(goplsCfg.GoplsPath, "serve")
+	cmd := exec.Command(self.config.GoplsPath, "serve")
 	cmd.Dir = absPath
 
 	stdin, err := cmd.StdinPipe()
@@ -688,7 +690,7 @@ func getOrCreateWorkspace(path string) (*goplsInstance, error) {
 	}
 	inst.sendNotification("initialized", map[string]any{})
 
-	workspaces[absPath] = inst
+	self.workspaces[absPath] = inst
 	return inst, nil
 }
 
@@ -775,23 +777,23 @@ func (inst *goplsInstance) close() {
 	}
 }
 
-func startJanitor(interval time.Duration) {
+func (self *Gopls) startJanitor(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	for range ticker.C {
-		mu.Lock()
+		self.mu.Lock()
 		now := time.Now()
-		limit := time.Duration(goplsCfg.IdleTimeoutMinutes) * time.Minute
+		limit := time.Duration(self.config.IdleTimeoutMinutes) * time.Minute
 
-		for path, inst := range workspaces {
+		for path, inst := range self.workspaces {
 			if now.Sub(inst.lastActive) > limit {
 				log.Printf("[GOPLS] Janitor cleaning up idle process workspace: %s", path)
 				inst.close()
-				if activeWorkspacePath == path {
-					activeWorkspacePath = ""
+				if self.activeWorkspacePath == path {
+					self.activeWorkspacePath = ""
 				}
-				delete(workspaces, path)
+				delete(self.workspaces, path)
 			}
 		}
-		mu.Unlock()
+		self.mu.Unlock()
 	}
 }

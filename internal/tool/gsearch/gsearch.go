@@ -1,4 +1,4 @@
-package search
+package gsearch
 
 import (
 	"encoding/json"
@@ -13,17 +13,47 @@ import (
 	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
-type SearchResponse struct {
-	Items []struct {
-		Title       string `json:"title"`
-		Link        string `json:"link"`
-		DisplayLink string `json:"displayLink"`
-		Snippet     string `json:"snippet"`
-	} `json:"items"`
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+type Config struct {
+	NumResults   int    `json:"num_results"`
+	StartIndex   int    `json:"start_index"`
+	DateRestrict string `json:"date_restrict"`
+	GL           string `json:"gl"`
+	LR           string `json:"lr"`
 }
 
-func init() {
-	mcp.RegisterTool(
+func DefaultConfig() *Config {
+	return &Config{
+		NumResults:   10,
+		StartIndex:   0,
+		DateRestrict: "",
+		GL:           "hr",
+		LR:           "lang_en",
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tool
+// ---------------------------------------------------------------------------
+
+type GoogleSearch struct {
+	config *Config
+}
+
+func New(config *Config) (*GoogleSearch, error) {
+	if config == nil {
+		config = DefaultConfig()
+	}
+	return &GoogleSearch{
+		config: config,
+	}, nil
+}
+
+func (self *GoogleSearch) Register(r mcp.Registry) {
+	r.RegisterTool(
 		"google_search",
 		"Search the web using Google.",
 		json.RawMessage(`{
@@ -38,11 +68,11 @@ func init() {
 			},
 			"required": ["query"]
 		}`),
-		googleSearch,
+		self.googleSearch,
 	)
 }
 
-func googleSearch(args map[string]string) (string, error) {
+func (self *GoogleSearch) googleSearch(args map[string]string) (string, error) {
 	if os.Getenv("GOOGLE_API_KEY") == "" || os.Getenv("GOOGLE_CSE_ID") == "" {
 		return "", fmt.Errorf("google_search requires GOOGLE_API_KEY and GOOGLE_CSE_ID environment variables")
 	}
@@ -91,4 +121,13 @@ func googleSearch(args map[string]string) (string, error) {
 	}
 
 	return fmt.Sprintf("Found %d results:\n\n%s", len(searchResp.Items), strings.Join(results, "\n\n")), nil
+}
+
+type SearchResponse struct {
+	Items []struct {
+		Title       string `json:"title"`
+		Link        string `json:"link"`
+		DisplayLink string `json:"displayLink"`
+		Snippet     string `json:"snippet"`
+	} `json:"items"`
 }

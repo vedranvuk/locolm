@@ -4,9 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/vedranvuk/locolm/internal/client"
@@ -15,33 +14,54 @@ import (
 	_ "modernc.org/sqlite/vec"
 )
 
-var db *sql.DB
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
 
-// ... existing vars
-var llamaClient *client.Client
+type Config struct {
+	// No specific configuration needed for rag tool
+	// Embedding model dimensions can be configured here if needed
+	EmbeddingDimensions int `json:"embedding_dimensions"`
+}
 
-func init() {
-	// Initialize client targeting the secondary llama-server running the embedding model
-	llamaClient = client.New("http://127.0.0.1:11502")
-
-	// Init database
-	exePath, err := os.Executable()
-	if err != nil {
-		exePath = "."
+func DefaultConfig() *Config {
+	return &Config{
+		EmbeddingDimensions: 768, // Default for nomic-embed-text-v1.5
 	}
-	dbPath := filepath.Join(filepath.Dir(exePath), "locolm_vec.db")
+}
 
-	db, err = sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)")
-	if err != nil {
-		panic(fmt.Sprintf("failed to open database: %v", err))
+// ---------------------------------------------------------------------------
+// Tool
+// ---------------------------------------------------------------------------
+
+type RAGTool struct {
+	config *Config
+	db     *sql.DB
+	client *client.Client
+}
+
+func New(config *Config, db *sql.DB) (*RAGTool, error) {
+	if db == nil {
+		return nil, errors.New("rag: db is nil")
+	}
+	if config == nil {
+		config = DefaultConfig()
 	}
 
 	// Initialize tables for payload and vectors
 	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS memory_payload (id INTEGER PRIMARY KEY, content TEXT NOT NULL)`)
-	// Note: Change float[768] to match your specific GGUF embedding model dimensions (e.g., 384 for MiniLM, 768 for nomic)
-	_, _ = db.Exec(`CREATE VIRTUAL TABLE IF NOT EXISTS vec_items USING vec0(id INTEGER PRIMARY KEY, embedding float[768])`)
+	_, _ = db.Exec(`CREATE VIRTUAL TABLE IF NOT EXISTS vec_items USING vec0(id INTEGER PRIMARY KEY, embedding float[?])`, config.EmbeddingDimensions)
 
-	mcp.RegisterTool(
+	return &RAGTool{
+		config: config,
+		db:     db,
+		client: client.New("http://127.0.0.1:11502"),
+	}, nil
+}
+
+func (self *RAGTool) Register(r mcp.Registry) {
+
+	r.RegisterTool(
 		"remember_semantic",
 		"Write context to local embedded vector database for semantic search.",
 		json.RawMessage(`{
@@ -51,10 +71,10 @@ func init() {
 			},
 			"required": ["text"]
 		}`),
-		rememberSemantic,
+		self.rememberSemantic,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"recall_semantic",
 		"Semantic search memory via L2 distance.",
 		json.RawMessage(`{
@@ -64,10 +84,10 @@ func init() {
 			},
 			"required": ["query"]
 		}`),
-		recallSemantic,
+		self.recallSemantic,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"forget_semantic",
 		"Deletes an exact memory string from the semantic database to remove outdated context.",
 		json.RawMessage(`{
@@ -77,26 +97,26 @@ func init() {
 			},
 			"required": ["text"]
 		}`),
-		forgetSemantic,
+		self.forgetSemantic,
 	)
 }
 
-func fetchEmbedding(text string) ([]float32, error) {
+func (self *RAGTool) fetchEmbedding(text string) ([]float32, error) {
 	// Context can be passed down from the MCP handler if mcp-go supports it,
 	// otherwise Background is sufficient for local synchronous tool execution.
 	// Note: Requires a model with embedding support (e.g., nomic-embed-text, all-minilm)
 	// The model must be started with --pooling mean (or cls, last, rank)
-	return llamaClient.CreateEmbedding(context.Background(), text, "nomic-embed-text-v1.5")
+	return self.client.CreateEmbedding(context.Background(), text, "nomic-embed-text-v1.5")
 }
 
-func rememberSemantic(args map[string]string) (string, error) {
+func (self *RAGTool) rememberSemantic(args map[string]string) (string, error) {
 	text := args["text"]
-	emb, err := fetchEmbedding(text)
+	emb, err := self.fetchEmbedding(text)
 	if err != nil {
 		return "", fmt.Errorf("embedding failed: %v", err)
 	}
 
-	tx, err := db.Begin()
+	tx, err := self.db.Begin()
 	if err != nil {
 		return "", fmt.Errorf("failed to begin transaction: %v", err)
 	}
@@ -126,9 +146,9 @@ func rememberSemantic(args map[string]string) (string, error) {
 	return "Stored in sqlite-vec.", nil
 }
 
-func recallSemantic(args map[string]string) (string, error) {
+func (self *RAGTool) recallSemantic(args map[string]string) (string, error) {
 	query := args["query"]
-	emb, err := fetchEmbedding(query)
+	emb, err := self.fetchEmbedding(query)
 	if err != nil {
 		return "", fmt.Errorf("embedding failed: %v", err)
 	}
@@ -146,7 +166,7 @@ func recallSemantic(args map[string]string) (string, error) {
 		LIMIT 3;
 	`, string(embJSON))
 
-	rows, err := db.Query(queryStr)
+	rows, err := self.db.Query(queryStr)
 	if err != nil {
 		return "", fmt.Errorf("failed to query vectors: %v", err)
 	}
@@ -165,10 +185,10 @@ func recallSemantic(args map[string]string) (string, error) {
 	return "Semantic Matches:\n" + strings.Join(out, "\n"), nil
 }
 
-func forgetSemantic(args map[string]string) (string, error) {
+func (self *RAGTool) forgetSemantic(args map[string]string) (string, error) {
 	text := args["text"]
 
-	tx, _ := db.Begin()
+	tx, _ := self.db.Begin()
 	defer tx.Rollback()
 
 	var id int64

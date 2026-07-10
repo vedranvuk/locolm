@@ -1,4 +1,4 @@
-package search
+package exasearch
 
 import (
 	"bytes"
@@ -81,8 +81,23 @@ type exaCost struct {
 	Total float64 `json:"total"`
 }
 
-func init() {
-	mcp.RegisterTool(
+type Config struct {
+}
+
+func DefaultConfig() *Config { return &Config{} }
+
+type ExaSearch struct {
+	config *Config
+}
+
+func New(config *Config) (*ExaSearch, error) {
+	return &ExaSearch{
+		config: config,
+	}, nil
+}
+
+func (self *ExaSearch) Register(r mcp.Registry) {
+	r.RegisterTool(
 		"exa_search",
 		"Search the web using Exa AI - neural search with highlights and synthesized answers.",
 		json.RawMessage(`{

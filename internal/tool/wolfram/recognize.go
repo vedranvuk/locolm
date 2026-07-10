@@ -10,8 +10,8 @@ import (
 	"github.com/vedranvuk/locolm/internal/mcp"
 )
 
-func registerWolframRecognize() {
-	mcp.RegisterTool(
+func (self *WolframTool) registerWolframRecognize(r mcp.Registry) {
+	r.RegisterTool(
 		"wolfram_recognize",
 		"Quickly classify a query and check if Wolfram Alpha can handle it. Runs in under 10ms. Useful for triage before making a full query.",
 		json.RawMessage(`{
@@ -24,11 +24,11 @@ func registerWolframRecognize() {
 			},
 			"required": ["input"]
 		}`),
-		wolframRecognize,
+		self.wolframRecognize,
 	)
 }
 
-func wolframRecognize(args map[string]string) (string, error) {
+func (self *WolframTool) wolframRecognize(args map[string]string) (string, error) {
 	input, ok := args["input"]
 	if !ok || input == "" {
 		return "", fmt.Errorf("missing required argument: input")
@@ -38,7 +38,7 @@ func wolframRecognize(args map[string]string) (string, error) {
 	params.Set("i", input)
 	params.Set("mode", "Default")
 
-	body, err := wolframGet("https://www.wolframalpha.com/queryrecognizer/query.jsp", params, 10)
+	body, err := self.wolframGet("https://www.wolframalpha.com/queryrecognizer/query.jsp", params, 10)
 	if err != nil {
 		return "", err
 	}
@@ -50,12 +50,12 @@ func wolframRecognize(args map[string]string) (string, error) {
 		SpellingCorrection string   `xml:"spellingcorrection,attr"`
 		BuildNumber        string   `xml:"buildnumber,attr"`
 		Query              struct {
-			XMLName    xml.Name `xml:"query"`
-			Input      string   `xml:"i,attr"`
-			Accepted   string   `xml:"accepted,attr"`
-			Timing     string   `xml:"timing,attr"`
-			Domain     string   `xml:"domain,attr"`
-			Score      string   `xml:"resultsignificancescore,attr"`
+			XMLName  xml.Name `xml:"query"`
+			Input    string   `xml:"i,attr"`
+			Accepted string   `xml:"accepted,attr"`
+			Timing   string   `xml:"timing,attr"`
+			Domain   string   `xml:"domain,attr"`
+			Score    string   `xml:"resultsignificancescore,attr"`
 		} `xml:"query"`
 	}
 

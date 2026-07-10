@@ -24,24 +24,49 @@ import (
 // Config
 // ---------------------------------------------------------------------------
 
-// WebFetchConfig holds all configuration for the web_fetch tool.
-type WebFetchConfig struct {
+// Config holds all configuration for the web_fetch tool.
+type Config struct {
 	MaxBytes     int64
 	MaxTextBytes int64
 	Timeout      time.Duration
 	ProxyURL     string
 }
 
-// webFetchCfg is the package-level config with safe defaults.
-var webFetchCfg = WebFetchConfig{
-	MaxBytes:     5 * 1024 * 1024,
-	MaxTextBytes: 200 * 1024,
-	Timeout:      30 * time.Second,
-	ProxyURL:     "socks5://localhost:9050",
+func DefaultConfig() *Config {
+	return &Config{
+		MaxBytes:     5 * 1024 * 1024,
+		MaxTextBytes: 200 * 1024,
+		Timeout:      30 * time.Second,
+		ProxyURL:     "socks5://localhost:9050",
+	}
 }
 
-func init() {
-	mcp.RegisterTool(
+// ---------------------------------------------------------------------------
+// Tool
+// ---------------------------------------------------------------------------
+
+type WebFetchTool struct {
+	config *Config
+}
+
+func New(config *Config) (*WebFetchTool, error) {
+	if config == nil {
+		config = DefaultConfig()
+	}
+
+	if config.ProxyURL != "" {
+		log.Printf("[WEB_FETCH] Using proxy: %s", config.ProxyURL)
+	} else {
+		log.Printf("[WEB_FETCH] No proxy configured, connecting directly")
+	}
+
+	return &WebFetchTool{
+		config: config,
+	}, nil
+}
+
+func (self *WebFetchTool) Register(r mcp.Registry) {
+	r.RegisterTool(
 		"web_fetch",
 		"Fetch and read the content of a web page. If using proxy it can fetch .onion addresses.",
 		json.RawMessage(`{
@@ -54,30 +79,16 @@ func init() {
 				"raw": {
 					"type": "boolean",
 					"description": "If true, return the raw response body without text extraction"
+				},
+				"use_proxy": {
+					"type": "boolean",
+					"description": "If true, route the request through the configured TOR proxy."
+				}
 			},
-			"use_proxy": {
-				"type": "boolean",
-				"description": "If true, route the request through the configured TOR prox."
-			}
-		},
-		"required": ["url"]
-	}`),
-		webFetch,
+			"required": ["url"]
+		}`),
+		self.webFetch,
 	)
-}
-
-// LoadWebFetchConfig unmarshals the web_fetch JSON config into webFetchCfg.
-// Call this from main after LoadConfig.
-func LoadWebFetchConfig(raw json.RawMessage) {
-	if len(raw) == 0 {
-		return
-	}
-	json.Unmarshal(raw, &webFetchCfg)
-	if webFetchCfg.ProxyURL != "" {
-		log.Printf("[WEB_FETCH] Using proxy: %s", webFetchCfg.ProxyURL)
-	} else {
-		log.Printf("[WEB_FETCH] No proxy configured, connecting directly")
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -167,7 +178,7 @@ func newHTTPClient(timeout time.Duration, proxyURL string) *http.Client {
 // Public entry point
 // ---------------------------------------------------------------------------
 
-func webFetch(args map[string]string) (string, error) {
+func (self *WebFetchTool) webFetch(args map[string]string) (string, error) {
 	pageURL, ok := args["url"]
 	if !ok || pageURL == "" {
 		return "", fmt.Errorf("missing required argument: url")
@@ -182,7 +193,7 @@ func webFetch(args map[string]string) (string, error) {
 		return "", err
 	}
 
-	cfg := webFetchCfg
+	cfg := self.config
 
 	// Determine proxy usage: explicit arg wins, otherwise fall back to config default.
 	proxyURL := ""

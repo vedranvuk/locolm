@@ -20,24 +20,43 @@ import (
 // Config
 // ---------------------------------------------------------------------------
 
-type wikidataConfig struct {
-	Endpoint           string `json:"endpoint"`
-	SPARQLEndpoint     string `json:"sparql_endpoint"`
-	UserAgent          string `json:"user_agent"`
-	TimeoutSec         int    `json:"timeout_sec"`
-	MaxEntitiesPerReq  int    `json:"max_entities_per_request"`
+type Config struct {
+	Endpoint          string `json:"endpoint"`
+	SPARQLEndpoint    string `json:"sparql_endpoint"`
+	UserAgent         string `json:"user_agent"`
+	TimeoutSec        int    `json:"timeout_sec"`
+	MaxEntitiesPerReq int    `json:"max_entities_per_request"`
 }
 
-var wikidataCfg = wikidataConfig{
-	Endpoint:          "https://www.wikidata.org/w/api.php",
-	SPARQLEndpoint:    "https://query.wikidata.org/sparql",
-	UserAgent:         "locolm/1.0 (https://github.com/vedranvuk/locolm)",
-	TimeoutSec:        30,
-	MaxEntitiesPerReq: 50,
+func DefaultConfig() *Config {
+	return &Config{
+		Endpoint:          "https://www.wikidata.org/w/api.php",
+		SPARQLEndpoint:    "https://query.wikidata.org/sparql",
+		UserAgent:         "locolm/1.0 (https://github.com/vedranvuk/locolm)",
+		TimeoutSec:        30,
+		MaxEntitiesPerReq: 50,
+	}
 }
 
-func init() {
-	mcp.RegisterTool(
+// ---------------------------------------------------------------------------
+// Tool
+// ---------------------------------------------------------------------------
+
+type WikidataTool struct {
+	config *Config
+}
+
+func New(config *Config) (*WikidataTool, error) {
+	if config == nil {
+		config = DefaultConfig()
+	}
+	return &WikidataTool{
+		config: config,
+	}, nil
+}
+
+func (self *WikidataTool) Register(r mcp.Registry) {
+	r.RegisterTool(
 		"wikidata_query",
 		"Query Wikidata for structured knowledge about entities, people, places, concepts, and more. Supports three modes: 'entity' (fetch by Q-ID like Q42), 'search' (text search for entities), and 'sparql' (run a SPARQL query for complex data retrieval).",
 		json.RawMessage(`{
@@ -46,11 +65,13 @@ func init() {
 				"mode":  {"type": "string", "description": "Query mode: 'entity' (fetch by Q-ID), 'search' (text search), or 'sparql' (SPARQL query)"},
 				"query": {"type": "string", "description": "The query: Q-ID like 'Q42' (entity mode), search text like 'Ada Lovelace' (search mode), or a SPARQL query (sparql mode)"},
 				"lang":  {"type": "string", "description": "Language code for labels, e.g. 'en', 'de', 'fr' (default: 'en')"},
-				"limit": {"type": "string", "description": "Max results for search mode (default 10, max 50)"}
+				"limit": {"type": "string", "description": "Max results for search mode (default 10, max 50)"},
+				"timeout": {"type": "string", "description": "Timeout in seconds (default from config)"},
+				"max_entities": {"type": "string", "description": "Max entities per request (default from config)"}
 			},
 			"required": ["mode", "query"]
 		}`),
-		wikidataQuery,
+		self.wikidataQuery,
 	)
 }
 
@@ -58,7 +79,7 @@ func init() {
 // Tool implementation
 // ---------------------------------------------------------------------------
 
-func wikidataQuery(args map[string]string) (string, error) {
+func (self *WikidataTool) wikidataQuery(args map[string]string) (string, error) {
 	mode, ok := args["mode"]
 	if !ok || mode == "" {
 		return "", fmt.Errorf("missing required argument: mode")
@@ -81,7 +102,7 @@ func wikidataQuery(args map[string]string) (string, error) {
 
 	switch mode {
 	case "entity":
-		return queryEntity(query, lang)
+		return self.queryEntity(query, lang)
 	case "search":
 		limit := 10
 		if v, ok := args["limit"]; ok && v != "" {
@@ -92,9 +113,9 @@ func wikidataQuery(args map[string]string) (string, error) {
 				}
 			}
 		}
-		return searchEntities(query, lang, limit)
+		return self.searchEntities(query, lang, limit)
 	case "sparql":
-		return querySPARQL(query, lang)
+		return self.querySPARQL(query, lang)
 	default:
 		return "", fmt.Errorf("unknown mode: %s (valid: entity, search, sparql)", mode)
 	}
@@ -104,9 +125,9 @@ func wikidataQuery(args map[string]string) (string, error) {
 // HTTP client
 // ---------------------------------------------------------------------------
 
-func newHTTPClient() *http.Client {
+func (self *WikidataTool) newHTTPClient() *http.Client {
 	return &http.Client{
-		Timeout: time.Duration(wikidataCfg.TimeoutSec) * time.Second,
+		Timeout: time.Duration(self.config.TimeoutSec) * time.Second,
 	}
 }
 
@@ -114,7 +135,7 @@ func newHTTPClient() *http.Client {
 // Entity mode
 // ---------------------------------------------------------------------------
 
-func queryEntity(idsStr, lang string) (string, error) {
+func (self *WikidataTool) queryEntity(idsStr, lang string) (string, error) {
 	// Parse Q-IDs (comma or pipe separated)
 	ids := parseQIDs(idsStr)
 	if len(ids) == 0 {
@@ -122,16 +143,16 @@ func queryEntity(idsStr, lang string) (string, error) {
 	}
 
 	// Batch if more than max
-	if len(ids) > wikidataCfg.MaxEntitiesPerReq {
-		ids = ids[:wikidataCfg.MaxEntitiesPerReq]
+	if len(ids) > self.config.MaxEntitiesPerReq {
+		ids = ids[:self.config.MaxEntitiesPerReq]
 	}
 
-	client := newHTTPClient()
+	client := self.newHTTPClient()
 	var allResults []map[string]interface{}
 
 	// Process in batches
-	for i := 0; i < len(ids); i += wikidataCfg.MaxEntitiesPerReq {
-		end := i + wikidataCfg.MaxEntitiesPerReq
+	for i := 0; i < len(ids); i += self.config.MaxEntitiesPerReq {
+		end := i + self.config.MaxEntitiesPerReq
 		if end > len(ids) {
 			end = len(ids)
 		}
@@ -144,12 +165,12 @@ func queryEntity(idsStr, lang string) (string, error) {
 		params.Set("formatversion", "2")
 		params.Set("uselang", lang)
 
-		req, err := http.NewRequest("POST", wikidataCfg.Endpoint, strings.NewReader(params.Encode()))
+		req, err := http.NewRequest("POST", self.config.Endpoint, strings.NewReader(params.Encode()))
 		if err != nil {
 			return "", fmt.Errorf("failed to create entity request: %v", err)
 		}
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("User-Agent", wikidataCfg.UserAgent)
+		req.Header.Set("User-Agent", self.config.UserAgent)
 
 		resp, err := client.Do(req)
 		if err != nil {
@@ -400,7 +421,7 @@ func resolveValue(value interface{}, datatype string, lang string) interface{} {
 			return map[string]interface{}{
 				"latitude":  lat,
 				"longitude": lon,
-				"globe":    globe,
+				"globe":     globe,
 			}
 		}
 
@@ -422,8 +443,8 @@ func resolveValue(value interface{}, datatype string, lang string) interface{} {
 // Search mode
 // ---------------------------------------------------------------------------
 
-func searchEntities(search, lang string, limit int) (string, error) {
-	client := newHTTPClient()
+func (self *WikidataTool) searchEntities(search, lang string, limit int) (string, error) {
+	client := self.newHTTPClient()
 
 	params := url.Values{}
 	params.Set("action", "wbsearchentities")
@@ -433,11 +454,11 @@ func searchEntities(search, lang string, limit int) (string, error) {
 	params.Set("format", "json")
 	params.Set("formatversion", "2")
 
-	req, err := http.NewRequest("GET", wikidataCfg.Endpoint+"?"+params.Encode(), nil)
+	req, err := http.NewRequest("GET", self.config.Endpoint+"?"+params.Encode(), nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create search request: %v", err)
 	}
-	req.Header.Set("User-Agent", wikidataCfg.UserAgent)
+	req.Header.Set("User-Agent", self.config.UserAgent)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -458,9 +479,9 @@ func searchEntities(search, lang string, limit int) (string, error) {
 
 	var result struct {
 		Search []struct {
-			ID          string `json:"id"`
-			Label       string `json:"label"`
-			Description string `json:"description"`
+			ID          string   `json:"id"`
+			Label       string   `json:"label"`
+			Description string   `json:"description"`
 			Aliases     []string `json:"aliases"`
 		} `json:"search"`
 	}
@@ -519,8 +540,8 @@ func normalizeSPARQL(query string) string {
 	return result
 }
 
-func querySPARQL(query, lang string) (string, error) {
-	client := newHTTPClient()
+func (self *WikidataTool) querySPARQL(query, lang string) (string, error) {
+	client := self.newHTTPClient()
 
 	// Inject label service if the query uses SELECT and doesn't already have it.
 	// We only do this for simple queries where the last } is the outer block
@@ -544,13 +565,13 @@ func querySPARQL(query, lang string) (string, error) {
 	formData := url.Values{}
 	formData.Set("query", query)
 
-	req, err := http.NewRequest("POST", wikidataCfg.SPARQLEndpoint, strings.NewReader(formData.Encode()))
+	req, err := http.NewRequest("POST", self.config.SPARQLEndpoint, strings.NewReader(formData.Encode()))
 	if err != nil {
 		return "", fmt.Errorf("failed to create SPARQL request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/sparql-results+json")
-	req.Header.Set("User-Agent", wikidataCfg.UserAgent)
+	req.Header.Set("User-Agent", self.config.UserAgent)
 
 	resp, err := client.Do(req)
 	if err != nil {

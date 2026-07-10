@@ -1,6 +1,5 @@
 // Package fs provides filesystem tools for the MCP server.
 // All paths are sandboxed to configured allowed base directories.
-// Config is self-registered via init() using tool.RegisterConfig.
 package fs
 
 import (
@@ -23,9 +22,8 @@ import (
 // Config
 // ---------------------------------------------------------------------------
 
-// FSConfig holds all configuration for the filesystem tools.
-// Defined here — not in config.go — to maintain separation of concerns.
-type FSConfig struct {
+// Config holds all configuration for the filesystem tools.
+type Config struct {
 	AllowedPaths   []string `json:"allowed_paths"`
 	ReadMaxBytes   int64    `json:"read_max_bytes"`
 	WriteMaxBytes  int64    `json:"write_max_bytes"`
@@ -33,20 +31,38 @@ type FSConfig struct {
 	TreeMaxDepth   int      `json:"tree_max_depth"`
 }
 
-// fsCfg is the package-level config with safe defaults.
-var fsCfg = FSConfig{
-	AllowedPaths:   []string{"."},
-	ReadMaxBytes:   1048576, // 1 MB
-	WriteMaxBytes:  1048576, // 1 MB
-	FindMaxResults: 200,
-	TreeMaxDepth:   3,
+func DefaultConfig() *Config {
+	return &Config{
+		AllowedPaths:   []string{"."},
+		ReadMaxBytes:   1048576, // 1 MB
+		WriteMaxBytes:  1048576, // 1 MB
+		FindMaxResults: 200,
+		TreeMaxDepth:   3,
+	}
 }
 
-func init() {
+// ---------------------------------------------------------------------------
+// Tool
+// ---------------------------------------------------------------------------
 
+type FSTool struct {
+	config *Config
+}
+
+func New(config *Config) (*FSTool, error) {
+	if config == nil {
+		config = DefaultConfig()
+	}
+	tool := &FSTool{config: config}
+	log.Printf("[FS] Config loaded: allowed_paths=%v, read_max=%d, write_max=%d, find_max=%d, tree_depth=%d",
+		tool.config.AllowedPaths, tool.config.ReadMaxBytes, tool.config.WriteMaxBytes, tool.config.FindMaxResults, tool.config.TreeMaxDepth)
+	return tool, nil
+}
+
+func (self *FSTool) Register(r mcp.Registry) {
 	// Register tools
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"fs_list",
 		"List directory contents. Returns name, size, type, and modification time for each entry.",
 		json.RawMessage(`{
@@ -72,10 +88,10 @@ func init() {
 				}
 			}
 		}`),
-		fsList,
+		self.fsList,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"fs_read",
 		"Read a text file's content.",
 		json.RawMessage(`{
@@ -96,10 +112,10 @@ func init() {
 			},
 			"required": ["path"]
 		}`),
-		fsRead,
+		self.fsRead,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"fs_write",
 		"Create or overwrite a file with text content.",
 		json.RawMessage(`{
@@ -116,10 +132,10 @@ func init() {
 			},
 			"required": ["path", "content"]
 		}`),
-		fsWrite,
+		self.fsWrite,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"fs_delete",
 		"Delete a single file. Cannot delete directories.",
 		json.RawMessage(`{
@@ -132,10 +148,10 @@ func init() {
 			},
 			"required": ["path"]
 		}`),
-		fsDelete,
+		self.fsDelete,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"fs_find",
 		"Find files by name pattern (glob). Returns matching file paths.",
 		json.RawMessage(`{
@@ -156,10 +172,10 @@ func init() {
 			},
 			"required": ["pattern"]
 		}`),
-		fsFind,
+		self.fsFind,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"fs_tree",
 		"Display a directory tree structure as indented text.",
 		json.RawMessage(`{
@@ -183,10 +199,10 @@ func init() {
 				}
 			}
 		}`),
-		fsTree,
+		self.fsTree,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"fs_replace",
 		"Replace exact literal string or regex pattern in a file. Use this tool to edit source files.",
 		json.RawMessage(`{
@@ -199,10 +215,10 @@ func init() {
 			},
 			"required": ["path", "old_content", "new_content"]
 		}`),
-		fsReplace,
+		self.fsReplace,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"fs_append",
 		"Append exact content to the end of a file. Escape special characters (Go syntax).",
 		json.RawMessage(`{
@@ -213,10 +229,10 @@ func init() {
 			},
 			"required": ["path", "content"]
 		}`),
-		fsAppend,
+		self.fsAppend,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"fs_prepend",
 		"Prepend exact content to the beginning of a file. Escape special characters (Go syntax).",
 		json.RawMessage(`{
@@ -227,10 +243,10 @@ func init() {
 			},
 			"required": ["path", "content"]
 		}`),
-		fsPrepend,
+		self.fsPrepend,
 	)
 
-	mcp.RegisterTool(
+	r.RegisterTool(
 		"fs_move",
 		"Move or rename a file. Creates parent directories if missing.",
 		json.RawMessage(`{
@@ -241,7 +257,7 @@ func init() {
 			},
 			"required": ["path", "new_path"]
 		}`),
-		fsMove,
+		self.fsMove,
 	)
 }
 
@@ -249,22 +265,11 @@ func init() {
 // Sandbox
 // ---------------------------------------------------------------------------
 
-// LoadFSConfig unmarshals the fs JSON config into fsCfg.
-// Call this from main after LoadConfig.
-func LoadFSConfig(raw json.RawMessage) {
-	if len(raw) == 0 {
-		return
-	}
-	json.Unmarshal(raw, &fsCfg)
-	log.Printf("[FS] Config loaded: allowed_paths=%v, read_max=%d, write_max=%d, find_max=%d, tree_depth=%d",
-		fsCfg.AllowedPaths, fsCfg.ReadMaxBytes, fsCfg.WriteMaxBytes, fsCfg.FindMaxResults, fsCfg.TreeMaxDepth)
-}
-
 // resolveAndValidate resolves a path (expanding "~" to home) and verifies
 // it falls within one of the configured allowed base directories.
 // Returns the cleaned absolute path or an error.
 // Resolves symlinks to prevent sandbox escape.
-func resolveAndValidate(inputPath string) (string, error) {
+func (self *FSTool) resolveAndValidate(inputPath string) (string, error) {
 	if inputPath == "" {
 		inputPath = "."
 	}
@@ -293,7 +298,7 @@ func resolveAndValidate(inputPath string) (string, error) {
 	}
 
 	// Check against each allowed base
-	for _, base := range fsCfg.AllowedPaths {
+	for _, base := range self.config.AllowedPaths {
 		if base == "" {
 			continue
 		}
@@ -328,12 +333,8 @@ func resolveAndValidate(inputPath string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("path %q is outside allowed directories (allowed: %v)", inputPath, fsCfg.AllowedPaths)
+	return "", fmt.Errorf("path %q is outside allowed directories (allowed: %v)", inputPath, self.config.AllowedPaths)
 }
-
-// ---------------------------------------------------------------------------
-// fs_list
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // fs_list
@@ -346,13 +347,13 @@ type listEntry struct {
 	Modified string `json:"modified"`
 }
 
-func fsList(args map[string]string) (string, error) {
+func (self *FSTool) fsList(args map[string]string) (string, error) {
 	dirPath := args["path"]
 	if dirPath == "" {
 		dirPath = "."
 	}
 
-	resolved, err := resolveAndValidate(dirPath)
+	resolved, err := self.resolveAndValidate(dirPath)
 	if err != nil {
 		return "", err
 	}
@@ -418,13 +419,13 @@ func fsList(args map[string]string) (string, error) {
 // fs_read
 // ---------------------------------------------------------------------------
 
-func fsRead(args map[string]string) (string, error) {
+func (self *FSTool) fsRead(args map[string]string) (string, error) {
 	filePath := args["path"]
 	if filePath == "" {
 		return "", fmt.Errorf("path is required")
 	}
 
-	resolved, err := resolveAndValidate(filePath)
+	resolved, err := self.resolveAndValidate(filePath)
 	if err != nil {
 		return "", err
 	}
@@ -436,8 +437,8 @@ func fsRead(args map[string]string) (string, error) {
 	if info.IsDir() {
 		return "", fmt.Errorf("path is a directory, not a file: %q", resolved)
 	}
-	if info.Size() > fsCfg.ReadMaxBytes {
-		return "", fmt.Errorf("file size %d exceeds read limit of %d bytes", info.Size(), fsCfg.ReadMaxBytes)
+	if info.Size() > self.config.ReadMaxBytes {
+		return "", fmt.Errorf("file size %d exceeds read limit of %d bytes", info.Size(), self.config.ReadMaxBytes)
 	}
 
 	f, err := os.Open(resolved)
@@ -490,7 +491,7 @@ func fsRead(args map[string]string) (string, error) {
 // fs_write
 // ---------------------------------------------------------------------------
 
-func fsWrite(args map[string]string) (string, error) {
+func (self *FSTool) fsWrite(args map[string]string) (string, error) {
 	filePath := args["path"]
 	content := args["content"]
 
@@ -498,11 +499,11 @@ func fsWrite(args map[string]string) (string, error) {
 		return "", fmt.Errorf("path is required")
 	}
 
-	if int64(len(content)) > fsCfg.WriteMaxBytes {
-		return "", fmt.Errorf("content size %d exceeds write limit of %d bytes", len(content), fsCfg.WriteMaxBytes)
+	if int64(len(content)) > self.config.WriteMaxBytes {
+		return "", fmt.Errorf("content size %d exceeds write limit of %d bytes", len(content), self.config.WriteMaxBytes)
 	}
 
-	resolved, err := resolveAndValidate(filePath)
+	resolved, err := self.resolveAndValidate(filePath)
 	if err != nil {
 		return "", err
 	}
@@ -525,13 +526,13 @@ func fsWrite(args map[string]string) (string, error) {
 // fs_delete
 // ---------------------------------------------------------------------------
 
-func fsDelete(args map[string]string) (string, error) {
+func (self *FSTool) fsDelete(args map[string]string) (string, error) {
 	filePath := args["path"]
 	if filePath == "" {
 		return "", fmt.Errorf("path is required")
 	}
 
-	resolved, err := resolveAndValidate(filePath)
+	resolved, err := self.resolveAndValidate(filePath)
 	if err != nil {
 		return "", err
 	}
@@ -556,7 +557,7 @@ func fsDelete(args map[string]string) (string, error) {
 // fs_find
 // ---------------------------------------------------------------------------
 
-func fsFind(args map[string]string) (string, error) {
+func (self *FSTool) fsFind(args map[string]string) (string, error) {
 	pattern := args["pattern"]
 	if pattern == "" {
 		return "", fmt.Errorf("pattern is required")
@@ -567,12 +568,12 @@ func fsFind(args map[string]string) (string, error) {
 		basePath = "."
 	}
 
-	resolved, err := resolveAndValidate(basePath)
+	resolved, err := self.resolveAndValidate(basePath)
 	if err != nil {
 		return "", err
 	}
 
-	maxResults := fsCfg.FindMaxResults
+	maxResults := self.config.FindMaxResults
 	if v := args["max_results"]; v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 {
@@ -598,7 +599,7 @@ func fsFind(args map[string]string) (string, error) {
 
 		// Check that the real path is still within allowed directories
 		valid := false
-		for _, base := range fsCfg.AllowedPaths {
+		for _, base := range self.config.AllowedPaths {
 			if base == "" {
 				continue
 			}
@@ -658,18 +659,18 @@ func fsFind(args map[string]string) (string, error) {
 // fs_tree
 // ---------------------------------------------------------------------------
 
-func fsTree(args map[string]string) (string, error) {
+func (self *FSTool) fsTree(args map[string]string) (string, error) {
 	basePath := args["path"]
 	if basePath == "" {
 		basePath = "."
 	}
 
-	resolved, err := resolveAndValidate(basePath)
+	resolved, err := self.resolveAndValidate(basePath)
 	if err != nil {
 		return "", err
 	}
 
-	maxDepth := fsCfg.TreeMaxDepth
+	maxDepth := self.config.TreeMaxDepth
 	if v := args["depth"]; v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 {
@@ -692,8 +693,8 @@ func fsTree(args map[string]string) (string, error) {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%s\n", resolved)
 
-	treeMaxEntries := fsCfg.FindMaxResults // reuse find limit as tree entry cap
-	buildTree(&sb, resolved, "", 0, maxDepth, excludeSet, &treeMaxEntries, showHidden)
+	treeMaxEntries := self.config.FindMaxResults // reuse find limit as tree entry cap
+	self.buildTree(&sb, resolved, "", 0, maxDepth, excludeSet, &treeMaxEntries, showHidden)
 
 	log.Printf("[FS] Tree output: %d lines", strings.Count(sb.String(), "\n"))
 	return sb.String(), nil
@@ -705,7 +706,7 @@ func isHidden(name string) bool {
 	return strings.HasPrefix(name, ".")
 }
 
-func buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, maxDepth int, excludeSet map[string]bool, remaining *int, showHidden bool) {
+func (self *FSTool) buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, maxDepth int, excludeSet map[string]bool, remaining *int, showHidden bool) {
 	if depth >= maxDepth || *remaining <= 0 {
 		return
 	}
@@ -756,7 +757,7 @@ func buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, ma
 			if isLast {
 				extension = "    "
 			}
-			buildTree(sb, filepath.Join(dirPath, entry.Name()), prefix+extension, depth+1, maxDepth, excludeSet, remaining, showHidden)
+			self.buildTree(sb, filepath.Join(dirPath, entry.Name()), prefix+extension, depth+1, maxDepth, excludeSet, remaining, showHidden)
 		}
 	}
 }
@@ -765,8 +766,8 @@ func buildTree(sb *strings.Builder, dirPath string, prefix string, depth int, ma
 // fs_replace
 // ---------------------------------------------------------------------------
 
-func fsReplace(args map[string]string) (string, error) {
-	resolved, err := resolveAndValidate(args["path"])
+func (self *FSTool) fsReplace(args map[string]string) (string, error) {
+	resolved, err := self.resolveAndValidate(args["path"])
 	if err != nil {
 		return "", err
 	}
@@ -796,7 +797,7 @@ func fsReplace(args map[string]string) (string, error) {
 		finalContent = strings.Replace(content, oldContent, newContent, 1)
 	}
 
-	if int64(len(finalContent)) > fsCfg.WriteMaxBytes {
+	if int64(len(finalContent)) > self.config.WriteMaxBytes {
 		return "", fmt.Errorf("content size exceeds write limit")
 	}
 
@@ -810,8 +811,8 @@ func fsReplace(args map[string]string) (string, error) {
 // fs_append & fs_prepend
 // ---------------------------------------------------------------------------
 
-func fsAppend(args map[string]string) (string, error) {
-	resolved, err := resolveAndValidate(args["path"])
+func (self *FSTool) fsAppend(args map[string]string) (string, error) {
+	resolved, err := self.resolveAndValidate(args["path"])
 	if err != nil {
 		return "", err
 	}
@@ -824,7 +825,7 @@ func fsAppend(args map[string]string) (string, error) {
 	// Strictly append exact bytes provided
 	finalContent := string(existing) + args["content"]
 
-	if int64(len(finalContent)) > fsCfg.WriteMaxBytes {
+	if int64(len(finalContent)) > self.config.WriteMaxBytes {
 		return "", fmt.Errorf("content size exceeds write limit")
 	}
 	if err := os.WriteFile(resolved, []byte(finalContent), 0644); err != nil {
@@ -833,8 +834,8 @@ func fsAppend(args map[string]string) (string, error) {
 	return "Appended exactly as requested", nil
 }
 
-func fsPrepend(args map[string]string) (string, error) {
-	resolved, err := resolveAndValidate(args["path"])
+func (self *FSTool) fsPrepend(args map[string]string) (string, error) {
+	resolved, err := self.resolveAndValidate(args["path"])
 	if err != nil {
 		return "", err
 	}
@@ -847,7 +848,7 @@ func fsPrepend(args map[string]string) (string, error) {
 	// Strictly prepend exact bytes provided
 	finalContent := args["content"] + string(existing)
 
-	if int64(len(finalContent)) > fsCfg.WriteMaxBytes {
+	if int64(len(finalContent)) > self.config.WriteMaxBytes {
 		return "", fmt.Errorf("content size exceeds write limit")
 	}
 	if err := os.WriteFile(resolved, []byte(finalContent), 0644); err != nil {
@@ -860,13 +861,13 @@ func fsPrepend(args map[string]string) (string, error) {
 // fs_move
 // ---------------------------------------------------------------------------
 
-func fsMove(args map[string]string) (string, error) {
-	resolvedOld, err := resolveAndValidate(args["path"])
+func (self *FSTool) fsMove(args map[string]string) (string, error) {
+	resolvedOld, err := self.resolveAndValidate(args["path"])
 	if err != nil {
 		return "", err
 	}
 
-	resolvedNew, err := resolveAndValidate(args["new_path"])
+	resolvedNew, err := self.resolveAndValidate(args["new_path"])
 	if err != nil {
 		return "", err
 	}
